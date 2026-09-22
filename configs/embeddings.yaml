@@ -1,0 +1,50 @@
+# Runtime and model settings for scripts/generate_embeddings.py.
+dataset_config_dir: configs/datasets
+dataset_config_pattern: "raw_{modality}.yaml"
+output_root: data
+modalities: [chest, fundus, mri, oct]
+
+defaults:
+  batch_size: 16
+  num_workers: 0
+  device: auto
+  seed: 42
+  normalize: true
+  norm_eps: 1e-12
+  output_dtype: float32
+  labels_dtype: int64
+  embeddings_file_pattern: "{stem}_embeds.npy"
+  labels_file_pattern: "{stem}_labels.npy"
+
+encoders:
+  MedImageInsight:
+    hf_repo: lion-ai/MedImageInsights
+    model_subdirectory: 2024.09.27
+    vision_model_name: medimageinsigt-v1.0.0.pt
+    language_model_name: language_model.pth
+
+  MedSigLIP:
+    model_name: google/medsiglip-448
+    token_env: HF_TOKEN
+
+  BiomedCLIP:
+    model_name: hf-hub:microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224
+
+  UniMedCLIP:
+    git_repository: https://github.com/mbzuai-oryx/UniMed-CLIP.git
+    repository_dir: .third_party/UniMed-CLIP
+    model_name: ViT-B-16-quickgelu
+    text_encoder_name: microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract
+    hf_repo: UzairK/unimed-clip-vit-b16
+    hf_filename: unimed-clip-vit-b16.pt
+    precision: amp
+    force_quick_gelu: true
+    pretrained_image: false
+    in_memory: true
+    legacy_checkpoints:
+      - unimed-clip-vit-b16.pt
+      - unimed_clip_vit_l14_base_text_encoder.pt
+      - unimed_clip_vit_l14_large_text_encoder.pt
+
+  CLIP:
+    model_name: ViT-L/14@336px

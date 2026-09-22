@@ -1,0 +1,263 @@
+_target_: datasets.raw_fundus.FundusRawDataset
+root: /Volumes/Eshaan APFS/data
+modality_root: ${root}/fundus
+seed: 42
+sample_strategy: python_ordered
+image_extensions: [.png, .jpg, .jpeg, .bmp, .tif, .tiff]
+
+sources:
+  "AMDNet23 Dataset":
+    "train_normal":
+      loader: folder
+      paths: ["${modality_root}/AMDNet23 Dataset/train/normal"]
+      label: 0
+    "train_amd":
+      loader: folder
+      paths: ["${modality_root}/AMDNet23 Dataset/train/amd"]
+      label: 1
+    "train_cataract":
+      loader: folder
+      paths: ["${modality_root}/AMDNet23 Dataset/train/cataract"]
+      label: 2
+    "train_diabetes":
+      loader: folder
+      paths: ["${modality_root}/AMDNet23 Dataset/train/diabetes"]
+      label: 3
+    "valid_normal":
+      loader: folder
+      paths: ["${modality_root}/AMDNet23 Dataset/valid/normal"]
+      label: 0
+    "valid_amd":
+      loader: folder
+      paths: ["${modality_root}/AMDNet23 Dataset/valid/amd"]
+      label: 1
+    "valid_cataract":
+      loader: folder
+      paths: ["${modality_root}/AMDNet23 Dataset/valid/cataract"]
+      label: 2
+    "valid_diabetes":
+      loader: folder
+      paths: ["${modality_root}/AMDNet23 Dataset/valid/diabetes"]
+      label: 3
+  "Diabetic Retinopathy and Retinal Diseases Fundus I":
+    "11.Normal_Fundus":
+      loader: folder
+      paths: ["${modality_root}/Diabetic Retinopathy and Retinal Diseases Fundus I/11.Normal Fundus"]
+      label: 0
+    "5.Severe_DR":
+      loader: folder
+      paths: ["${modality_root}/Diabetic Retinopathy and Retinal Diseases Fundus I/5.Severe DR"]
+      label: 1
+    "7.Cataract":
+      loader: folder
+      paths: ["${modality_root}/Diabetic Retinopathy and Retinal Diseases Fundus I/7.Cataract"]
+      label: 2
+    "8.Hypertensive_Retinopathy":
+      loader: folder
+      paths: ["${modality_root}/Diabetic Retinopathy and Retinal Diseases Fundus I/8.Hypertensive Retinopathy"]
+      label: 3
+    "9.Pathological_Myopia":
+      loader: folder
+      paths: ["${modality_root}/Diabetic Retinopathy and Retinal Diseases Fundus I/9.Pathological Myopia"]
+      label: 4
+    "10.Glaucoma":
+      loader: folder
+      paths: ["${modality_root}/Diabetic Retinopathy and Retinal Diseases Fundus I/10.Glaucoma"]
+      label: 5
+    "13._Very_Severe_NPDR":
+      loader: folder
+      paths: ["${modality_root}/Diabetic Retinopathy and Retinal Diseases Fundus I/13. Very Severe NPDR"]
+      label: 6
+    "1.Dry_AMD":
+      loader: folder
+      paths: ["${modality_root}/Diabetic Retinopathy and Retinal Diseases Fundus I/1.Dry AMD"]
+      label: 7
+    "2.Wet_AMD":
+      loader: folder
+      paths: ["${modality_root}/Diabetic Retinopathy and Retinal Diseases Fundus I/2.Wet AMD"]
+      label: 8
+    "3.Mild_DR":
+      loader: folder
+      paths: ["${modality_root}/Diabetic Retinopathy and Retinal Diseases Fundus I/3.Mild DR"]
+      label: 9
+    "4.Moderate_DR":
+      loader: folder
+      paths: ["${modality_root}/Diabetic Retinopathy and Retinal Diseases Fundus I/4.Moderate DR"]
+      label: 10
+    "6.Proliferate_DR":
+      loader: folder
+      paths: ["${modality_root}/Diabetic Retinopathy and Retinal Diseases Fundus I/6.Proliferate DR"]
+      label: 11
+    "12._Advanced_PDR":
+      loader: folder
+      paths: ["${modality_root}/Diabetic Retinopathy and Retinal Diseases Fundus I/12. Advanced PDR"]
+      label: 12
+  "Eye Disease Image Dataset":
+    "Original_Dataset_Healthy":
+      loader: folder
+      paths: ["${modality_root}/Eye Disease Image Dataset/Original Dataset/Healthy"]
+      label: 0
+    "Original_Dataset_Diabetic_Retinopathy":
+      loader: folder
+      paths: ["${modality_root}/Eye Disease Image Dataset/Original Dataset/Diabetic Retinopathy"]
+      label: 1
+    "Original_Dataset_Disc_Edema":
+      loader: folder
+      paths: ["${modality_root}/Eye Disease Image Dataset/Original Dataset/Disc Edema"]
+      label: 2
+    "Original_Dataset_Glaucoma":
+      loader: folder
+      paths: ["${modality_root}/Eye Disease Image Dataset/Original Dataset/Glaucoma"]
+      label: 3
+    "Original_Dataset_Myopia":
+      loader: folder
+      paths: ["${modality_root}/Eye Disease Image Dataset/Original Dataset/Myopia"]
+      label: 4
+    "Original_Dataset_Retinitis_Pigmentosa":
+      loader: folder
+      paths: ["${modality_root}/Eye Disease Image Dataset/Original Dataset/Retinitis Pigmentosa"]
+      label: 5
+    "Original_Dataset_Central_Serous_Chorioretinopathy_[Color_Fundus":
+      loader: folder
+      paths: ["${modality_root}/Eye Disease Image Dataset/Original Dataset/Central Serous Chorioretinopathy [Color Fundus]"]
+      label: 6
+    "Original_Dataset_Macular_Scar":
+      loader: folder
+      paths: ["${modality_root}/Eye Disease Image Dataset/Original Dataset/Macular Scar"]
+      label: 7
+    "Original_Dataset_Pterygium":
+      loader: folder
+      paths: ["${modality_root}/Eye Disease Image Dataset/Original Dataset/Pterygium"]
+      label: 8
+    "Original_Dataset_Retinal_Detachment":
+      loader: folder
+      paths: ["${modality_root}/Eye Disease Image Dataset/Original Dataset/Retinal Detachment"]
+      label: 9
+  "Retinal Fundus Images":
+    "train_Normal_Fundus":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/train/Normal_Fundus"]
+      label: 0
+    "train_AMD":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/train/AMD"]
+      label: 1
+    "train_Cataract":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/train/Cataract"]
+      label: 2
+    "train_DR":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/train/DR"]
+      label: 3
+    "train_Glaucoma":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/train/Glaucoma"]
+      label: 4
+    "train_Hypertensive_Retinopathy":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/train/Hypertensive_Retinopathy"]
+      label: 5
+    "train_Pathological_Myopia":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/train/Pathological_Myopia"]
+      label: 6
+    "val_Normal_Fundus":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/val/Normal_Fundus"]
+      label: 0
+    "val_AMD":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/val/AMD"]
+      label: 1
+    "val_Cataract":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/val/Cataract"]
+      label: 2
+    "val_DR":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/val/DR"]
+      label: 3
+    "val_Glaucoma":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/val/Glaucoma"]
+      label: 4
+    "val_Hypertensive_Retinopathy":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/val/Hypertensive_Retinopathy"]
+      label: 5
+    "val_Pathological_Myopia":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/val/Pathological_Myopia"]
+      label: 6
+    "test2_Normal_Fundus":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/test2/Normal_Fundus"]
+      label: 0
+    "test2_AMD":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/test2/AMD"]
+      label: 1
+    "test2_Cataract":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/test2/Cataract"]
+      label: 2
+    "test2_DR":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/test2/DR"]
+      label: 3
+    "test2_Glaucoma":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/test2/Glaucoma"]
+      label: 4
+    "test2_Hypertensive_Retinopathy":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/test2/Hypertensive_Retinopathy"]
+      label: 5
+    "test2_Pathological_Myopia":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/test2/Pathological_Myopia"]
+      label: 6
+    "test_Normal_Fundus":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/test/Normal_Fundus"]
+      label: 0
+    "test_AMD":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/test/AMD"]
+      label: 1
+    "test_Cataract":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/test/Cataract"]
+      label: 2
+    "test_DR":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/test/DR"]
+      label: 3
+    "test_Glaucoma":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/test/Glaucoma"]
+      label: 4
+    "test_Hypertensive_Retinopathy":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/test/Hypertensive_Retinopathy"]
+      label: 5
+    "test_Pathological_Myopia":
+      loader: folder
+      paths: ["${modality_root}/Retinal Fundus Images/test/Pathological_Myopia"]
+      label: 6
+  
+  "LAG":
+    "test":
+      loader: mediany_test
+      paths: {root: "${modality_root}/LAG"}
+  "G1020":
+    "labels":
+      loader: csv_labels
+      paths: {images_dir: "${modality_root}/G1020/Images", csv_path: "${modality_root}/G1020/G1020.csv"}
+  "ORIGA":
+    "labels":
+      loader: csv_labels
+      paths: {images_dir: "${modality_root}/ORIGA/Images", csv_path: "${modality_root}/ORIGA/OrigaList.csv"}
+      name_column: Filename
+      label_column: Glaucoma

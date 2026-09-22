@@ -1,0 +1,222 @@
+_target_: datasets.raw_oct.OCTRawDataset
+root: /Volumes/Eshaan APFS/data
+modality_root: ${root}/oct
+seed: 42
+sample_strategy: numpy_sorted
+image_extensions: [.png, .jpg, .jpeg, .bmp, .tif, .tiff]
+
+sources:
+  "OCT2017":
+    "train_Normal":
+      loader: folder
+      paths: ["${modality_root}/OCT2017/train/Normal"]
+      label: 0
+    "train_DR":
+      loader: folder
+      paths: ["${modality_root}/OCT2017/train/DR"]
+      label: 1
+    "test_Normal":
+      loader: folder
+      paths: ["${modality_root}/OCT2017/test/Normal"]
+      label: 0
+    "test_DR":
+      loader: folder
+      paths: ["${modality_root}/OCT2017/test/DR"]
+      label: 1
+  "Retinal OCT images":
+    "training_train_NORMAL":
+      loader: folder
+      paths: ["${modality_root}/Retinal OCT images/training/train/NORMAL"]
+      label: 0
+    "training_train_CNV":
+      loader: folder
+      paths: ["${modality_root}/Retinal OCT images/training/train/CNV"]
+      label: 1
+    "training_train_DME":
+      loader: folder
+      paths: ["${modality_root}/Retinal OCT images/training/train/DME"]
+      label: 2
+    "training_train_DRUSEN":
+      loader: folder
+      paths: ["${modality_root}/Retinal OCT images/training/train/DRUSEN"]
+      label: 3
+    "test_NORMAL":
+      loader: folder
+      paths: ["${modality_root}/Retinal OCT images/test/NORMAL"]
+      label: 0
+    "test_CNV":
+      loader: folder
+      paths: ["${modality_root}/Retinal OCT images/test/CNV"]
+      label: 1
+    "test_DME":
+      loader: folder
+      paths: ["${modality_root}/Retinal OCT images/test/DME"]
+      label: 2
+    "test_DRUSEN":
+      loader: folder
+      paths: ["${modality_root}/Retinal OCT images/test/DRUSEN"]
+      label: 3
+    "training_val_NORMAL":
+      loader: folder
+      paths: ["${modality_root}/Retinal OCT images/training/val/NORMAL"]
+      label: 0
+    "training_val_CNV":
+      loader: folder
+      paths: ["${modality_root}/Retinal OCT images/training/val/CNV"]
+      label: 1
+    "training_val_DME":
+      loader: folder
+      paths: ["${modality_root}/Retinal OCT images/training/val/DME"]
+      label: 2
+    "training_val_DRUSEN":
+      loader: folder
+      paths: ["${modality_root}/Retinal OCT images/training/val/DRUSEN"]
+      label: 3
+  
+  "ZhangLabData OCT":
+    "train_NORMAL":
+      loader: folder
+      paths: ["${modality_root}/ZhangLabData OCT/train/NORMAL"]
+      label: 0
+    "train_CNV":
+      loader: folder
+      paths: ["${modality_root}/ZhangLabData OCT/train/CNV"]
+      label: 1
+    "train_DME":
+      loader: folder
+      paths: ["${modality_root}/ZhangLabData OCT/train/DME"]
+      label: 2
+    "train_DRUSEN":
+      loader: folder
+      paths: ["${modality_root}/ZhangLabData OCT/train/DRUSEN"]
+      label: 3
+    "test_NORMAL":
+      loader: folder
+      paths: ["${modality_root}/ZhangLabData OCT/test/NORMAL"]
+      label: 0
+    "test_CNV":
+      loader: folder
+      paths: ["${modality_root}/ZhangLabData OCT/test/CNV"]
+      label: 1
+    "test_DME":
+      loader: folder
+      paths: ["${modality_root}/ZhangLabData OCT/test/DME"]
+      label: 2
+    "test_DRUSEN":
+      loader: folder
+      paths: ["${modality_root}/ZhangLabData OCT/test/DRUSEN"]
+      label: 3
+  "ARMD OCT":
+    "Test_NORMAL":
+      loader: folder
+      paths: ["${modality_root}/ARMD OCT/Test/NORMAL"]
+      label: 0
+    "Test_ARMD":
+      loader: folder
+      paths: ["${modality_root}/ARMD OCT/Test/ARMD"]
+      label: 1
+    "Train_NORMAL":
+      loader: folder
+      paths: ["${modality_root}/ARMD OCT/Train/NORMAL"]
+      label: 0
+    "Train_ARMD":
+      loader: folder
+      paths: ["${modality_root}/ARMD OCT/Train/ARMD"]
+      label: 1
+  "RetinalOCT_Dataset":
+    "test_NORMAL":
+      loader: folder
+      paths: ["${modality_root}/RetinalOCT_Dataset/test/NORMAL"]
+      label: 0
+    "test_AMD":
+      loader: folder
+      paths: ["${modality_root}/RetinalOCT_Dataset/test/AMD"]
+      label: 1
+    "test_CNV":
+      loader: folder
+      paths: ["${modality_root}/RetinalOCT_Dataset/test/CNV"]
+      label: 2
+    "test_CSR":
+      loader: folder
+      paths: ["${modality_root}/RetinalOCT_Dataset/test/CSR"]
+      label: 3
+    "test_DME":
+      loader: folder
+      paths: ["${modality_root}/RetinalOCT_Dataset/test/DME"]
+      label: 4
+    "test_DR":
+      loader: folder
+      paths: ["${modality_root}/RetinalOCT_Dataset/test/DR"]
+      label: 5
+    "test_DRUSEN":
+      loader: folder
+      paths: ["${modality_root}/RetinalOCT_Dataset/test/DRUSEN"]
+      label: 6
+    "test_MH":
+      loader: folder
+      paths: ["${modality_root}/RetinalOCT_Dataset/test/MH"]
+      label: 7
+    "train_NORMAL":
+      loader: folder
+      paths: ["${modality_root}/RetinalOCT_Dataset/train/NORMAL"]
+      label: 0
+    "train_AMD":
+      loader: folder
+      paths: ["${modality_root}/RetinalOCT_Dataset/train/AMD"]
+      label: 1
+    "train_CNV":
+      loader: folder
+      paths: ["${modality_root}/RetinalOCT_Dataset/train/CNV"]
+      label: 2
+    "train_CSR":
+      loader: folder
+      paths: ["${modality_root}/RetinalOCT_Dataset/train/CSR"]
+      label: 3
+    "train_DME":
+      loader: folder
+      paths: ["${modality_root}/RetinalOCT_Dataset/train/DME"]
+      label: 4
+    "train_DR":
+      loader: folder
+      paths: ["${modality_root}/RetinalOCT_Dataset/train/DR"]
+      label: 5
+    "train_DRUSEN":
+      loader: folder
+      paths: ["${modality_root}/RetinalOCT_Dataset/train/DRUSEN"]
+      label: 6
+    "train_MH":
+      loader: folder
+      paths: ["${modality_root}/RetinalOCT_Dataset/train/MH"]
+      label: 7
+    "val_NORMAL":
+      loader: folder
+      paths: ["${modality_root}/RetinalOCT_Dataset/val/NORMAL"]
+      label: 0
+    "val_AMD":
+      loader: folder
+      paths: ["${modality_root}/RetinalOCT_Dataset/val/AMD"]
+      label: 1
+    "val_CNV":
+      loader: folder
+      paths: ["${modality_root}/RetinalOCT_Dataset/val/CNV"]
+      label: 2
+    "val_CSR":
+      loader: folder
+      paths: ["${modality_root}/RetinalOCT_Dataset/val/CSR"]
+      label: 3
+    "val_DME":
+      loader: folder
+      paths: ["${modality_root}/RetinalOCT_Dataset/val/DME"]
+      label: 4
+    "val_DR":
+      loader: folder
+      paths: ["${modality_root}/RetinalOCT_Dataset/val/DR"]
+      label: 5
+    "val_DRUSEN":
+      loader: folder
+      paths: ["${modality_root}/RetinalOCT_Dataset/val/DRUSEN"]
+      label: 6
+    "val_MH":
+      loader: folder
+      paths: ["${modality_root}/RetinalOCT_Dataset/val/MH"]
+      label: 7

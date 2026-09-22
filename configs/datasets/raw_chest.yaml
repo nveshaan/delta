@@ -1,0 +1,107 @@
+_target_: datasets.raw_chest.ChestRawDataset
+root: /Volumes/Eshaan APFS/data
+modality_root: ${root}/chest
+seed: 42
+sample_strategy: python_sorted
+image_extensions: [.png, .jpg, .jpeg, .bmp, .tif, .tiff, .dcm]
+
+sources:
+  "cardiomegaly_set":
+    "train_false":
+      loader: folder
+      paths: ["${modality_root}/cardiomegaly_set/train/false"]
+      label: 0
+    "train_true":
+      loader: folder
+      paths: ["${modality_root}/cardiomegaly_set/train/true"]
+      label: 1
+    "test_false":
+      loader: folder
+      paths: ["${modality_root}/cardiomegaly_set/test/false"]
+      label: 0
+    "test_true":
+      loader: folder
+      paths: ["${modality_root}/cardiomegaly_set/test/true"]
+      label: 1
+  "covid_affected_and_normal":
+    "normal":
+      loader: folder
+      paths: ["${modality_root}/covid_affected_and_normal/normal"]
+      label: 0
+    "covid":
+      loader: folder
+      paths: ["${modality_root}/covid_affected_and_normal/covid"]
+      label: 1
+  "emphysema":
+    "train_normal":
+      loader: symptom_csv
+      paths:
+        images_dir: ${modality_root}/emphysema/frontals
+        csv_path: ${modality_root}/emphysema/train.csv
+      mode: normal
+      symptom_columns: &emphysema_symptoms
+        - Frontal - Depression and flattening of the diaphragm with blunting of costophrenic angles
+        - Frontal - Irregular radiolucency of the lung fields
+        - Lateral - Abnormal retrosternal space
+        - Lateral - Flattening or even concavity of diaphragmatic contours
+    "train_anomaly":
+      loader: symptom_csv
+      paths:
+        images_dir: ${modality_root}/emphysema/frontals
+        csv_path: ${modality_root}/emphysema/train.csv
+      mode: abnormal
+      symptom_columns: *emphysema_symptoms
+    "test_anomaly":
+      loader: symptom_csv
+      paths:
+        images_dir: ${modality_root}/emphysema/frontals
+        csv_path: ${modality_root}/emphysema/test.csv
+      mode: abnormal
+      symptom_columns: *emphysema_symptoms
+    "train_normal_lateral":
+      loader: symptom_csv
+      paths:
+        images_dir: ${modality_root}/emphysema/laterals
+        csv_path: ${modality_root}/emphysema/train.csv
+      mode: normal
+      symptom_columns: *emphysema_symptoms
+    "train_anomaly_lateral":
+      loader: symptom_csv
+      paths:
+        images_dir: ${modality_root}/emphysema/laterals
+        csv_path: ${modality_root}/emphysema/train.csv
+      mode: abnormal
+      symptom_columns: *emphysema_symptoms
+    "test_anomaly_lateral":
+      loader: symptom_csv
+      paths:
+        images_dir: ${modality_root}/emphysema/laterals
+        csv_path: ${modality_root}/emphysema/test.csv
+      mode: abnormal
+      symptom_columns: *emphysema_symptoms
+  "VinCXR":
+    "test":
+      loader: mediany_test
+      paths: {root: "${modality_root}/VinCXR"}
+  "RSNA":
+    "test":
+      loader: mediany_test
+      paths: {root: "${modality_root}/RSNA"}
+  "COVID-19_Radiography_Dataset":
+    "Normal":
+      loader: folder
+      paths: ["${modality_root}/COVID-19_Radiography_Dataset/Normal/images"]
+      label: 0
+    "COVID":
+      loader: folder
+      paths: ["${modality_root}/COVID-19_Radiography_Dataset/COVID/images"]
+      label: 1
+    "Lung_Opacity":
+      loader: folder
+      paths: ["${modality_root}/COVID-19_Radiography_Dataset/Lung_Opacity/images"]
+      label: 2
+    "Viral_Pneumonia":
+      loader: folder
+      paths: ["${modality_root}/COVID-19_Radiography_Dataset/Viral Pneumonia/images"]
+      label: 3
+  

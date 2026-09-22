@@ -1,0 +1,205 @@
+_target_: datasets.raw_mri.MRIRawDataset
+root: /Volumes/Eshaan APFS/data
+modality_root: ${root}/mri
+seed: 42
+sample_strategy: numpy_sorted
+image_extensions: [.png, .jpg, .jpeg, .bmp, .dcm]
+
+sources:
+  "Brain Tumor MRI Dataset":
+    "Training_notumor":
+      loader: folder
+      paths: ["${modality_root}/Brain Tumor MRI Dataset/Training/notumor"]
+      label: 0
+    "Training_meningioma":
+      loader: folder
+      paths: ["${modality_root}/Brain Tumor MRI Dataset/Training/meningioma"]
+      label: 1
+    "Training_glioma":
+      loader: folder
+      paths: ["${modality_root}/Brain Tumor MRI Dataset/Training/glioma"]
+      label: 2
+    "Training_pituitary":
+      loader: folder
+      paths: ["${modality_root}/Brain Tumor MRI Dataset/Training/pituitary"]
+      label: 3
+    "Testing_notumor":
+      loader: folder
+      paths: ["${modality_root}/Brain Tumor MRI Dataset/Testing/notumor"]
+      label: 0
+    "Testing_glioma":
+      loader: folder
+      paths: ["${modality_root}/Brain Tumor MRI Dataset/Testing/glioma"]
+      label: 2
+    "Testing_meningioma":
+      loader: folder
+      paths: ["${modality_root}/Brain Tumor MRI Dataset/Testing/meningioma"]
+      label: 1
+    "Testing_pituitary":
+      loader: folder
+      paths: ["${modality_root}/Brain Tumor MRI Dataset/Testing/pituitary"]
+      label: 3
+  "BraTS2021":
+    "train":
+      loader: folder
+      paths: ["${modality_root}/BraTS2021/train"]
+      label: 0
+    "test_tumor":
+      loader: folder
+      paths: ["${modality_root}/BraTS2021/test/tumor"]
+      label: 1
+    "test_normal":
+      loader: folder
+      paths: ["${modality_root}/BraTS2021/test/normal"]
+      label: 0
+  "Br35H":
+    "no":
+      loader: folder
+      paths: ["${modality_root}/Br35H/no"]
+      label: 0
+    "yes":
+      loader: folder
+      paths: ["${modality_root}/Br35H/yes"]
+      label: 1
+    "Br35H-Mask-RCNN_TRAIN":
+      loader: folder
+      paths: ["${modality_root}/Br35H/Br35H-Mask-RCNN/TRAIN"]
+      label: 1
+    "Br35H-Mask-RCNN_VAL":
+      loader: folder
+      paths: ["${modality_root}/Br35H/Br35H-Mask-RCNN/VAL"]
+      label: 1
+    "Br35H-Mask-RCNN_TEST":
+      loader: folder
+      paths: ["${modality_root}/Br35H/Br35H-Mask-RCNN/TEST"]
+      label: 1
+  
+  "BrainTumor":
+    "test":
+      loader: mediany_test
+      paths: {root: "${modality_root}/BrainTumor"}
+  "brain_tumor_dataset":
+    "no":
+      loader: folder
+      paths: ["${modality_root}/brain_tumor_dataset/no"]
+      label: 0
+    "yes":
+      loader: folder
+      paths: ["${modality_root}/brain_tumor_dataset/yes"]
+      label: 1
+  "brisc2025":
+    "classification_task_test_no_tumor":
+      loader: folder
+      paths: ["${modality_root}/brisc2025/classification_task/test/no_tumor"]
+      label: 0
+    "classification_task_test_glioma":
+      loader: folder
+      paths: ["${modality_root}/brisc2025/classification_task/test/glioma"]
+      label: 1
+    "classification_task_test_meningioma":
+      loader: folder
+      paths: ["${modality_root}/brisc2025/classification_task/test/meningioma"]
+      label: 2
+    "classification_task_test_pituitary":
+      loader: folder
+      paths: ["${modality_root}/brisc2025/classification_task/test/pituitary"]
+      label: 3
+    "classification_task_train_no_tumor":
+      loader: folder
+      paths: ["${modality_root}/brisc2025/classification_task/train/no_tumor"]
+      label: 0
+    "classification_task_train_glioma":
+      loader: folder
+      paths: ["${modality_root}/brisc2025/classification_task/train/glioma"]
+      label: 1
+    "classification_task_train_meningioma":
+      loader: folder
+      paths: ["${modality_root}/brisc2025/classification_task/train/meningioma"]
+      label: 2
+    "classification_task_train_pituitary":
+      loader: folder
+      paths: ["${modality_root}/brisc2025/classification_task/train/pituitary"]
+      label: 3
+  "Epic and CSCR hospital Dataset":
+    "Test_notumor":
+      loader: folder
+      paths: ["${modality_root}/Epic and CSCR hospital Dataset/Test/notumor"]
+      label: 0
+    "Test_glioma":
+      loader: folder
+      paths: ["${modality_root}/Epic and CSCR hospital Dataset/Test/glioma"]
+      label: 1
+    "Test_meningioma":
+      loader: folder
+      paths: ["${modality_root}/Epic and CSCR hospital Dataset/Test/meningioma"]
+      label: 2
+    "Test_pituitary":
+      loader: folder
+      paths: ["${modality_root}/Epic and CSCR hospital Dataset/Test/pituitary"]
+      label: 3
+    "Train_notumor":
+      loader: folder
+      paths: ["${modality_root}/Epic and CSCR hospital Dataset/Train/notumor"]
+      label: 0
+    "Train_glioma":
+      loader: folder
+      paths: ["${modality_root}/Epic and CSCR hospital Dataset/Train/glioma"]
+      label: 1
+    "Train_meningioma":
+      loader: folder
+      paths: ["${modality_root}/Epic and CSCR hospital Dataset/Train/meningioma"]
+      label: 2
+    "Train_pituitary":
+      loader: folder
+      paths: ["${modality_root}/Epic and CSCR hospital Dataset/Train/pituitary"]
+      label: 3
+  "Alzheimer_s Dataset":
+    "train_NonDemented":
+      loader: folder
+      paths: ["${modality_root}/Alzheimer_s Dataset/train/NonDemented"]
+      label: 0
+    "train_MildDemented":
+      loader: folder
+      paths: ["${modality_root}/Alzheimer_s Dataset/train/MildDemented"]
+      label: 1
+    "train_ModerateDemented":
+      loader: folder
+      paths: ["${modality_root}/Alzheimer_s Dataset/train/ModerateDemented"]
+      label: 2
+    "train_VeryMildDemented":
+      loader: folder
+      paths: ["${modality_root}/Alzheimer_s Dataset/train/VeryMildDemented"]
+      label: 3
+    "test_NonDemented":
+      loader: folder
+      paths: ["${modality_root}/Alzheimer_s Dataset/test/NonDemented"]
+      label: 0
+    "test_MildDemented":
+      loader: folder
+      paths: ["${modality_root}/Alzheimer_s Dataset/test/MildDemented"]
+      label: 1
+    "test_ModerateDemented":
+      loader: folder
+      paths: ["${modality_root}/Alzheimer_s Dataset/test/ModerateDemented"]
+      label: 2
+    "test_VeryMildDemented":
+      loader: folder
+      paths: ["${modality_root}/Alzheimer_s Dataset/test/VeryMildDemented"]
+      label: 3
+  "OASIS Alzheimer's Detection":
+    "Non_Demented":
+      loader: folder
+      paths: ["${modality_root}/OASIS Alzheimer's Detection/Non Demented"]
+      label: 0
+    "Mild_Dementia":
+      loader: folder
+      paths: ["${modality_root}/OASIS Alzheimer's Detection/Mild Dementia"]
+      label: 1
+    "Moderate_Dementia":
+      loader: folder
+      paths: ["${modality_root}/OASIS Alzheimer's Detection/Moderate Dementia"]
+      label: 2
+    "Very_mild_Dementia":
+      loader: folder
+      paths: ["${modality_root}/OASIS Alzheimer's Detection/Very mild Dementia"]
+      label: 3
