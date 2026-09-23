@@ -7,8 +7,8 @@ each embedding matrix. Runtime, path, and model values are in
 configs/embeddings.yaml.
 
 Outputs:
-    data/<modality>/<encoder>/<dataset_name>_embeds.npy
-    data/<modality>/<encoder>/<dataset_name>_labels.npy
+    data/<modality>/<dataset_name>/<encoder>_embeds.npy
+    data/<modality>/<dataset_name>/labels.npy
 """
 
 from __future__ import annotations
@@ -519,9 +519,6 @@ def generate_for_encoder(
     output_dtype = defaults.get("output_dtype", "float32")
     labels_dtype = getattr(np, defaults.get("labels_dtype", "int64"), np.int64)
 
-    embeds_pattern = defaults.get("embeddings_file_pattern", "{stem}_embeds.npy")
-    labels_pattern = defaults.get("labels_file_pattern", "{stem}_labels.npy")
-
     try:
         for modality in modalities:
             for dataset_name, subtypes, RawDataset in dataset_groups(modality, settings):
@@ -530,12 +527,11 @@ def generate_for_encoder(
                     if requested not in {dataset_name.lower(), safe_name(dataset_name).lower()}:
                         continue
 
-                stem = safe_name(dataset_name)
-                output_dir = output_root / modality / safe_name(encoder.name)
+                output_dir = output_root / modality / dataset_name
                 output_dir.mkdir(parents=True, exist_ok=True)
 
-                embeddings_path = output_dir / embeds_pattern.format(stem=stem)
-                labels_path = output_dir / labels_pattern.format(stem=stem)
+                embeddings_path = output_dir / f"{safe_name(encoder.name)}_embeds.npy"
+                labels_path = output_dir / "labels.npy"
 
                 if embeddings_path.exists() and labels_path.exists() and not overwrite:
                     print(f"  {modality}/{dataset_name}: cached")
@@ -562,8 +558,16 @@ def generate_for_encoder(
                         f"{len(embeddings)} embeds vs {len(labels)} labels"
                     )
 
+                if labels_path.exists():
+                    existing_labels = np.load(labels_path)
+                    if not np.array_equal(existing_labels, labels):
+                        raise RuntimeError(
+                            f"Label order mismatch for {modality}/{dataset_name}; "
+                            "dataset samples are not ordered consistently"
+                        )
+                else:
+                    np.save(labels_path, labels)
                 np.save(embeddings_path, embeddings)
-                np.save(labels_path, labels)
                 print(f"    saved {embeddings_path} and {labels_path}")
     finally:
         unload_encoder(encoder, device)
