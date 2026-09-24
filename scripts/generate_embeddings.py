@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Generate medical-image embeddings from raw-data configs.
 
 Each configured parent dataset is embedded as one collection. Fine-grained
@@ -29,6 +28,7 @@ import torch
 import torch.nn.functional as F
 from omegaconf import OmegaConf
 from torch.utils.data import DataLoader, Subset
+from tqdm import tqdm
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "configs" / "embeddings.yaml"
@@ -135,8 +135,6 @@ def unload_encoder(encoder: Encoder | None, device: torch.device | None = None) 
 
 # =============================================================================
 # MULTIMODAL ENCODER LOADERS
-# Self-contained implementations copied from plot_multimodal_embeddings_before_after_msde.py.
-# All hardcoded values, repo targets, and models are loaded from configs/embeddings.yaml.
 # =============================================================================
 
 def load_medimageinsight(device: torch.device, config: dict[str, Any]) -> Encoder:
@@ -422,6 +420,7 @@ def output_tensor(value: Any) -> torch.Tensor:
 def encode_dataset(
     dataset,
     encoder: Encoder,
+    dataset_name: str,
     batch_size: int,
     num_workers: int,
     device: torch.device,
@@ -442,33 +441,39 @@ def encode_dataset(
     start = 0
     chunks: list[torch.Tensor] = []
 
-    while start < total:
-        batch_end = min(start + current_batch_size, total)
-        batch_indices = list(range(start, batch_end))
+    with tqdm(
+        total=total,
+        desc=f"{encoder.name} | {dataset_name}",
+        unit="image",
+    ) as progress:
+        while start < total:
+            batch_end = min(start + current_batch_size, total)
+            batch_indices = list(range(start, batch_end))
 
-        try:
-            subset = Subset(dataset, batch_indices)
-            loader = DataLoader(
-                subset,
-                batch_size=len(batch_indices),
-                shuffle=False,
-                num_workers=num_workers,
-            )
-            with torch.inference_mode():
-                for images, _ in loader:
-                    features = output_tensor(encoder.encode_batch(images))
-                    if features.ndim > 2:
-                        features = features.flatten(1)
-                    chunks.append(features.detach().float().cpu())
+            try:
+                subset = Subset(dataset, batch_indices)
+                loader = DataLoader(
+                    subset,
+                    batch_size=len(batch_indices),
+                    shuffle=False,
+                    num_workers=num_workers,
+                )
+                with torch.inference_mode():
+                    for images, _ in loader:
+                        features = output_tensor(encoder.encode_batch(images))
+                        if features.ndim > 2:
+                            features = features.flatten(1)
+                        chunks.append(features.detach().float().cpu())
 
-            start = batch_end
+                start = batch_end
+                progress.update(len(batch_indices))
 
-        except RuntimeError as error:
-            if not is_oom(error) or current_batch_size == 1:
-                raise
-            current_batch_size = max(1, current_batch_size // 2)
-            print(f"      reducing batch size to {current_batch_size} after OOM")
-            unload_encoder(None, device)
+            except RuntimeError as error:
+                if not is_oom(error) or current_batch_size == 1:
+                    raise
+                current_batch_size = max(1, current_batch_size // 2)
+                print(f"      reducing batch size to {current_batch_size} after OOM")
+                unload_encoder(None, device)
 
     all_features = torch.cat(chunks, dim=0)
 
@@ -544,6 +549,7 @@ def generate_for_encoder(
                 embeddings = encode_dataset(
                     dataset=dataset,
                     encoder=encoder,
+                    dataset_name=dataset_name,
                     batch_size=batch_size,
                     num_workers=num_workers,
                     device=device,
