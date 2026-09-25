@@ -166,7 +166,13 @@ def load_medimageinsight(device: torch.device, config: dict[str, Any]) -> Encode
 
 
 def load_medsiglip(device: torch.device, config: dict[str, Any]) -> Encoder:
-    """Load MedSigLIP vision encoder using Hugging Face Transformers."""
+    """Load MedSigLIP vision encoder using Hugging Face Transformers.
+
+    NOTE: MedSigLIP is a gated model. Before running this, request access
+    on its model page on the HF Hub, then authenticate locally with:
+        hf auth login
+    (or set the HF_TOKEN environment variable).
+    """
     from transformers import AutoModel, AutoProcessor
 
     token_env = config.get("token_env", "HF_TOKEN")
@@ -181,7 +187,7 @@ def load_medsiglip(device: torch.device, config: dict[str, Any]) -> Encoder:
             "MedSigLIP is a gated Hugging Face model. "
             "Accept the Health AI Developer Foundations terms for "
             f"{config['model_name']} and authenticate with either "
-            "`huggingface-cli login` or HF_TOKEN, then rerun."
+            "`hf auth login` or HF_TOKEN, then rerun."
         ) from exc
     model.eval()
 

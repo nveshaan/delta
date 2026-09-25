@@ -9,6 +9,7 @@ uv sync
 
 ## Data
 The datasets have to be downloaded externally and are to be placed in the `data/` folder in the following way:
+
 ```bash
 ./data
 ├── chest
@@ -43,10 +44,16 @@ The datasets have to be downloaded externally and are to be placed in the `data/
     ├── RetinalOCT_Dataset
     └── ZhangLabData OCT
 ```
+
 Then, to generate embeddings of **MedImageInsight**, **MedSigLIP**, **BiomedCLIP**, **UniMedCLIP** and **CLIP**, run the following command:
+
 ```bash
 uv run python scripts/generate_embeddings.py
 ```
+
+> **MedSigLIP** is a gated model. Before running this, request access on its model page on the HF Hub, then authenticate locally with:
+> `hf auth login`
+> (or set the `HF_TOKEN` environment variable).
 
 ## Acknowledgements
 - Kar, P., Bordoloi, R., Wolkenhauer, O., & Bej, S. (2026). Anomaly Detection via Mean Shift Density Enhancement. arXiv:2602.03293. https://doi.org/10.48550/arXiv.2602.03293
