@@ -36,7 +36,7 @@ The datasets have to be downloaded externally and are to be placed in the `data/
 │   ├── BraTS2021
 │   ├── brisc2025
 │   ├── Epic and CSCR hospital Dataset
-│   └── OASIS Alzheimer's Detection
+│   └── OASIS Alzheimer,s Detection
 └── oct
     ├── ARMD OCT
     ├── OCT2017
