@@ -55,6 +55,46 @@ def _resolve_embeds_file(dataset_dir: Path, encoder: str) -> Path:
     )
 
 
+def _balanced_cap_indices(labels: np.ndarray, cap: int, seed: int) -> np.ndarray:
+    """Select at most ``cap`` samples, balancing labels as evenly as possible."""
+    if cap < 0:
+        raise ValueError(f"cap must be non-negative, got {cap}")
+    if cap >= len(labels):
+        return np.arange(len(labels), dtype=np.int64)
+    if cap == 0 or len(labels) == 0:
+        return np.empty((0,), dtype=np.int64)
+
+    rng = np.random.RandomState(seed)
+    label_values = np.sort(np.unique(labels))
+    shuffled_by_label: dict[Any, np.ndarray] = {}
+    for label in label_values:
+        label_indices = np.flatnonzero(labels == label)
+        shuffled_by_label[label.item() if hasattr(label, "item") else label] = rng.permutation(
+            label_indices
+        )
+
+    # Round-robin selection gives every available label the same contribution
+    # before a label is exhausted, with deterministic tie-breaking by label.
+    selected: list[int] = []
+    positions = {label: 0 for label in shuffled_by_label}
+    while len(selected) < cap:
+        made_progress = False
+        for label in shuffled_by_label:
+            position = positions[label]
+            candidates = shuffled_by_label[label]
+            if position >= len(candidates):
+                continue
+            selected.append(int(candidates[position]))
+            positions[label] += 1
+            made_progress = True
+            if len(selected) == cap:
+                break
+        if not made_progress:
+            break
+
+    return np.sort(np.asarray(selected, dtype=np.int64))
+
+
 class SingleEmbedsDataset(Dataset):
     """PyTorch Dataset for a single dataset folder's pre-computed embeddings and labels."""
 
@@ -65,6 +105,7 @@ class SingleEmbedsDataset(Dataset):
         encoder: str = "CLIP",
         pool_anomalies: bool = False,
         cap: int | None = None,
+        include_labels: list[int] | tuple[int, ...] | set[int] | None = None,
         seed: int = 42,
         as_tensor: bool = True,
         transform: Callable[[torch.Tensor], torch.Tensor] | None = None,
@@ -75,6 +116,7 @@ class SingleEmbedsDataset(Dataset):
         self.encoder = encoder
         self.pool_anomalies = pool_anomalies
         self.cap = cap
+        self.include_labels = include_labels
         self.seed = seed
         self.as_tensor = as_tensor
         self.transform = transform
@@ -96,9 +138,14 @@ class SingleEmbedsDataset(Dataset):
                 f"{len(embeds)} embeds vs {len(labels)} labels"
             )
 
+        if include_labels is not None:
+            include_labels_array = np.asarray(list(include_labels))
+            keep = np.isin(labels, include_labels_array)
+            embeds = embeds[keep]
+            labels = labels[keep]
+
         if self.cap is not None and len(embeds) > self.cap:
-            rng = np.random.RandomState(self.seed)
-            indices = sorted(rng.choice(len(embeds), self.cap, replace=False))
+            indices = _balanced_cap_indices(labels, self.cap, self.seed)
             embeds = embeds[indices]
             labels = labels[indices]
 
@@ -128,8 +175,12 @@ class ModalityEmbedsDataset(Dataset):
     """Aggregate pre-computed embedding datasets for a modality.
 
     Filters datasets by split ('train', 'test', or 'all') using tags specified in
-    configs/datasets/embeds_<modality>.yaml, applies per-dataset caps, and optionally
-    pools anomalies into a binary label (0 = normal, 1 = anomalous).
+    configs/datasets/embeds_<modality>.yaml, applies balanced per-dataset caps,
+    and optionally pools anomalies into a binary label (0 = normal, 1 = anomalous).
+
+    Labels are made globally unique while datasets are merged. ``dataset_label_mapping``
+    and ``label_metadata`` expose the relationship between merged labels and their
+    source datasets.
     """
 
     def __init__(
@@ -156,6 +207,12 @@ class ModalityEmbedsDataset(Dataset):
         self.seed = seed
         self.as_tensor = as_tensor
         self.transform = transform
+
+        # The maps are public so callers can interpret labels returned by this dataset.
+        self.dataset_label_mapping: dict[str, dict[int, int]] = {}
+        self.label_metadata: dict[int, dict[str, Any]] = {}
+        self.label_to_dataset = self.label_metadata
+        self.label_mapping = self.label_metadata
 
         cfg_dict: dict[str, Any] = {}
         if config_path is not None or (datasets is None and modality is not None):
@@ -203,19 +260,38 @@ class ModalityEmbedsDataset(Dataset):
             if not dataset_dir.is_dir():
                 continue
 
+            include_labels = meta.get("include_labels", meta.get("labels"))
+            if include_labels is not None:
+                include_labels = [int(label) for label in include_labels]
+
             sub_ds = SingleEmbedsDataset(
                 dataset_dir=dataset_dir,
                 dataset_name=dataset_name,
                 encoder=self.encoder,
                 pool_anomalies=self.pool_anomalies,
                 cap=dataset_cap,
+                include_labels=include_labels,
                 seed=self.seed,
                 as_tensor=False,
             )
 
             if len(sub_ds) > 0:
+                source_labels = sorted(int(label) for label in np.unique(sub_ds.labels))
+                label_map = {
+                    source_label: len(self.label_metadata) + offset
+                    for offset, source_label in enumerate(source_labels)
+                }
+                remapped_labels = np.asarray(
+                    [label_map[int(label)] for label in sub_ds.labels], dtype=np.int64
+                )
+                self.dataset_label_mapping[dataset_name] = label_map
+                for source_label, merged_label in label_map.items():
+                    self.label_metadata[merged_label] = {
+                        "dataset": dataset_name,
+                        "source_label": source_label,
+                    }
                 all_embeds.append(sub_ds.embeddings)
-                all_labels.append(sub_ds.labels)
+                all_labels.append(remapped_labels)
                 self.dataset_names.append(dataset_name)
                 self.sample_dataset_names.extend([dataset_name] * len(sub_ds))
 
