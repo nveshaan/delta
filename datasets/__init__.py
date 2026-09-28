@@ -1,5 +1,15 @@
-"""Raw PyTorch dataset factories for medical-imaging modalities."""
+"""PyTorch dataset factories for raw images and pre-computed embeddings."""
 
+from .embeds import (
+    ChestEmbedsDataset,
+    FundusEmbedsDataset,
+    MODALITY_EMBEDS_DATASETS,
+    MRIEmbedsDataset,
+    ModalityEmbedsDataset,
+    OCTEmbedsDataset,
+    SingleEmbedsDataset,
+    build_embeds_dataset,
+)
 from .raw import (
     CSVLabelDataset,
     ChestRawDataset,
@@ -25,6 +35,7 @@ from .raw import (
 )
 
 __all__ = [
+    # Raw datasets
     "CSVLabelDataset",
     "ChestRawDataset",
     "DEFAULT_SAMPLE_STRATEGIES",
@@ -46,4 +57,13 @@ __all__ = [
     "list_images",
     "pil_to_tensor",
     "select_split",
+    # Embeddings datasets
+    "ChestEmbedsDataset",
+    "FundusEmbedsDataset",
+    "MODALITY_EMBEDS_DATASETS",
+    "MRIEmbedsDataset",
+    "ModalityEmbedsDataset",
+    "OCTEmbedsDataset",
+    "SingleEmbedsDataset",
+    "build_embeds_dataset",
 ]

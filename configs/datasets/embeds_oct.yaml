@@ -1,0 +1,23 @@
+_target_: datasets.embeds.OCTEmbedsDataset
+modality: oct
+data_root: data/oct
+encoder: CLIP
+pool_anomalies: false
+seed: 42
+
+datasets:
+  OCT2017:
+    tag: train
+    cap: 3000
+  Retinal OCT images:
+    tag: train
+    cap: 3000
+  ZhangLabData OCT:
+    tag: train
+    cap: 3000
+  ARMD OCT:
+    tag: test
+    cap: 2000
+  RetinalOCT_Dataset:
+    tag: test
+    cap: 2000

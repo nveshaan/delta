@@ -1,0 +1,26 @@
+_target_: datasets.embeds.ChestEmbedsDataset
+modality: chest
+data_root: data/chest
+encoder: CLIP
+pool_anomalies: false
+seed: 42
+
+datasets:
+  cardiomegaly_set:
+    tag: train
+    cap: null
+  covid_affected_and_normal:
+    tag: train
+    cap: null
+  emphysema:
+    tag: train
+    cap: null
+  VinCXR:
+    tag: test
+    cap: null
+  RSNA:
+    tag: test
+    cap: null
+  COVID-19_Radiography_Dataset:
+    tag: test
+    cap: 2000
