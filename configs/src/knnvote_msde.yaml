@@ -1,0 +1,21 @@
+_target_: src.knnvote_msde.KNNVoteMSDEPseudolabeler
+
+# Current-space KNN pseudolabeling.
+k_vote: 5
+confidence: 0.8
+
+# EM alternation and confidence-gated query movement.
+em_rounds: 5
+em_convergence_tolerance: 0.01
+gate_sharpness: 1.0
+
+# MSDE mode: no_msde | msde | label_aware_msde
+mode: label_aware_msde
+msde_k: 50
+msde_learning_rate: 0.33
+msde_nbd_sample_count_threshold: 70
+msde_shift_threshold: 0.01
+msde_inner_iterations: 3
+
+seed: 42
+device: auto

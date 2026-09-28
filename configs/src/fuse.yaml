@@ -1,0 +1,28 @@
+# FUSE pseudolabeling configuration.
+_target_: src.fuse.FusePseudolabeler
+
+# Set mode to one of:
+#   knn_only             CLIP + seed KNN pseudolabeling, no FUSE
+#   fuse_no_modularity   FUSE without the modularity objective
+#   fuse_no_supervised   FUSE without the supervised objective
+#   fuse_no_random_walk  FUSE without random-walk/semi-supervised propagation
+#   fuse                 full FUSE
+mode: fuse
+
+# Pseudolabel graph and filtering.
+k_nn: 15
+k_vote: 5
+confidence: 0.8
+
+# FUSE embedding optimization.
+k_embed: 150
+learning_rate: 0.05
+iterations: 200
+lambda_modularity: 1.0
+lambda_supervised: 1.0
+lambda_random_walk: 2.0
+random_walks: 10
+walk_length: 5
+max_labeled_steps: 3
+seed: 42
+device: auto
