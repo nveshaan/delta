@@ -95,6 +95,63 @@ def _balanced_cap_indices(labels: np.ndarray, cap: int, seed: int) -> np.ndarray
     return np.sort(np.asarray(selected, dtype=np.int64))
 
 
+def _balanced_binary_indices(labels: np.ndarray, cap: int, seed: int) -> np.ndarray:
+    """Select an equal number of zero and non-zero samples.
+
+    Every non-zero label gets the same number of samples, and the total number
+    of non-zero samples equals the number of zero samples.
+    """
+    nonzero_labels = sorted(int(label) for label in np.unique(labels) if label != 0)
+    if cap <= 0 or not nonzero_labels or not np.any(labels == 0):
+        return np.empty((0,), dtype=np.int64)
+
+    per_nonzero_label = cap // (2 * len(nonzero_labels))
+    if per_nonzero_label == 0:
+        return np.empty((0,), dtype=np.int64)
+
+    rng = np.random.RandomState(seed)
+    selected: list[int] = []
+    groups = [np.flatnonzero(labels == 0)]
+    groups.extend(np.flatnonzero(labels == label) for label in nonzero_labels)
+    for group_index, group in enumerate(groups):
+        required = per_nonzero_label * len(nonzero_labels) if group_index == 0 else per_nonzero_label
+        if len(group) < required:
+            return np.empty((0,), dtype=np.int64)
+        selected.extend(int(index) for index in rng.permutation(group)[:required])
+    return np.sort(np.asarray(selected, dtype=np.int64))
+
+
+def _automatic_cap(loaded: list[tuple[str, "SingleEmbedsDataset"]], seed: int) -> dict[str, np.ndarray]:
+    """Build equal-size, class-balanced selections for a split's datasets."""
+    if not loaded:
+        return {}
+
+    min_dataset_size = min(len(dataset) for _, dataset in loaded)
+    label_counts = []
+    max_balanced_sizes = []
+    for _, dataset in loaded:
+        nonzero_labels = [int(label) for label in np.unique(dataset.labels) if label != 0]
+        label_counts.append(len(nonzero_labels))
+        if nonzero_labels and np.any(dataset.labels == 0):
+            zero_count = int(np.sum(dataset.labels == 0))
+            nonzero_count = min(int(np.sum(dataset.labels == label)) for label in nonzero_labels)
+            max_balanced_sizes.append(
+                2 * len(nonzero_labels) * min(zero_count // len(nonzero_labels), nonzero_count)
+            )
+        else:
+            max_balanced_sizes.append(0)
+    label_lcm = int(np.lcm.reduce([count for count in label_counts if count], initial=1))
+    common_limit = min([min_dataset_size, *max_balanced_sizes])
+    common_cap = (common_limit // (2 * label_lcm)) * (2 * label_lcm)
+
+    selections: dict[str, np.ndarray] = {}
+    for offset, (dataset_name, dataset) in enumerate(loaded):
+        selections[dataset_name] = _balanced_binary_indices(
+            dataset.labels, common_cap, seed + offset
+        )
+    return selections
+
+
 class SingleEmbedsDataset(Dataset):
     """PyTorch Dataset for a single dataset folder's pre-computed embeddings and labels."""
 
@@ -103,7 +160,6 @@ class SingleEmbedsDataset(Dataset):
         dataset_dir: str | Path,
         dataset_name: str | None = None,
         encoder: str = "CLIP",
-        pool_anomalies: bool = False,
         cap: int | None = None,
         include_labels: list[int] | tuple[int, ...] | set[int] | None = None,
         seed: int = 42,
@@ -114,7 +170,6 @@ class SingleEmbedsDataset(Dataset):
         self.dataset_dir = Path(dataset_dir)
         self.dataset_name = dataset_name or self.dataset_dir.name
         self.encoder = encoder
-        self.pool_anomalies = pool_anomalies
         self.cap = cap
         self.include_labels = include_labels
         self.seed = seed
@@ -149,9 +204,6 @@ class SingleEmbedsDataset(Dataset):
             embeds = embeds[indices]
             labels = labels[indices]
 
-        if self.pool_anomalies:
-            labels = np.where(labels >= 1, 1, 0).astype(labels.dtype)
-
         self.embeddings = embeds
         self.labels = labels
 
@@ -175,8 +227,9 @@ class ModalityEmbedsDataset(Dataset):
     """Aggregate pre-computed embedding datasets for a modality.
 
     Filters datasets by split ('train', 'test', or 'all') using tags specified in
-    configs/datasets/embeds_<modality>.yaml, applies balanced per-dataset caps,
-    and optionally pools anomalies into a binary label (0 = normal, 1 = anomalous).
+    configs/datasets/embeds_<modality>.yaml. When capping is enabled, every
+    dataset in the selected split contributes equally, with zero and non-zero
+    labels balanced within each dataset.
 
     Labels are made globally unique while datasets are merged. ``dataset_label_mapping``
     and ``label_metadata`` expose the relationship between merged labels and their
@@ -190,8 +243,7 @@ class ModalityEmbedsDataset(Dataset):
         data_root: str | Path | None = None,
         split: str | None = "train",
         encoder: str = "CLIP",
-        pool_anomalies: bool = False,
-        cap: int | None = None,
+        cap: bool | None = None,
         seed: int = 42,
         as_tensor: bool = True,
         transform: Callable[[torch.Tensor], torch.Tensor] | None = None,
@@ -202,8 +254,7 @@ class ModalityEmbedsDataset(Dataset):
         self.modality = modality
         self.split = split
         self.encoder = encoder
-        self.pool_anomalies = pool_anomalies
-        self.cap_override = cap
+        self.cap_enabled = cap
         self.seed = seed
         self.as_tensor = as_tensor
         self.transform = transform
@@ -238,6 +289,9 @@ class ModalityEmbedsDataset(Dataset):
 
         self.root_path = root_path
 
+        if self.cap_enabled is None:
+            self.cap_enabled = bool(cfg_dict.get("cap", False))
+
         all_embeds: list[np.ndarray] = []
         all_labels: list[np.ndarray] = []
         self.dataset_names: list[str] = []
@@ -245,16 +299,13 @@ class ModalityEmbedsDataset(Dataset):
 
         split_filter = split.lower() if split is not None else "all"
 
+        loaded: list[tuple[str, SingleEmbedsDataset]] = []
         for dataset_name, dataset_meta in datasets.items():
             meta = dict(dataset_meta) if isinstance(dataset_meta, Mapping) else {}
             tag = str(meta.get("tag", "train")).lower()
 
             if split_filter not in {"all", "both"} and tag != split_filter:
                 continue
-
-            dataset_cap = self.cap_override if self.cap_override is not None else meta.get("cap")
-            if dataset_cap is not None:
-                dataset_cap = int(dataset_cap)
 
             dataset_dir = self.root_path / dataset_name
             if not dataset_dir.is_dir():
@@ -268,21 +319,36 @@ class ModalityEmbedsDataset(Dataset):
                 dataset_dir=dataset_dir,
                 dataset_name=dataset_name,
                 encoder=self.encoder,
-                pool_anomalies=self.pool_anomalies,
-                cap=dataset_cap,
                 include_labels=include_labels,
                 seed=self.seed,
                 as_tensor=False,
             )
 
             if len(sub_ds) > 0:
-                source_labels = sorted(int(label) for label in np.unique(sub_ds.labels))
+                loaded.append((dataset_name, sub_ds))
+
+        selections = _automatic_cap(loaded, self.seed) if self.cap_enabled else {
+            dataset_name: np.arange(len(sub_ds), dtype=np.int64)
+            for dataset_name, sub_ds in loaded
+        }
+
+        for dataset_name, sub_ds in loaded:
+            selected_indices = selections[dataset_name]
+            if self.cap_enabled:
+                sub_embeds = sub_ds.embeddings[selected_indices]
+                sub_labels = sub_ds.labels[selected_indices]
+            else:
+                sub_embeds = sub_ds.embeddings
+                sub_labels = sub_ds.labels
+
+            if len(sub_embeds) > 0:
+                source_labels = sorted(int(label) for label in np.unique(sub_labels))
                 label_map = {
                     source_label: len(self.label_metadata) + offset
                     for offset, source_label in enumerate(source_labels)
                 }
                 remapped_labels = np.asarray(
-                    [label_map[int(label)] for label in sub_ds.labels], dtype=np.int64
+                    [label_map[int(label)] for label in sub_labels], dtype=np.int64
                 )
                 self.dataset_label_mapping[dataset_name] = label_map
                 for source_label, merged_label in label_map.items():
@@ -290,10 +356,10 @@ class ModalityEmbedsDataset(Dataset):
                         "dataset": dataset_name,
                         "source_label": source_label,
                     }
-                all_embeds.append(sub_ds.embeddings)
+                all_embeds.append(sub_embeds)
                 all_labels.append(remapped_labels)
                 self.dataset_names.append(dataset_name)
-                self.sample_dataset_names.extend([dataset_name] * len(sub_ds))
+                self.sample_dataset_names.extend([dataset_name] * len(sub_embeds))
 
         if all_embeds:
             self.embeddings = np.concatenate(all_embeds, axis=0)
@@ -370,8 +436,7 @@ def build_embeds_dataset(
     modality: str,
     split: str = "train",
     encoder: str = "CLIP",
-    pool_anomalies: bool = False,
-    cap: int | None = None,
+    cap: bool | None = None,
     seed: int = 42,
     as_tensor: bool = True,
     **kwargs: Any,
@@ -382,7 +447,6 @@ def build_embeds_dataset(
         modality=modality,
         split=split,
         encoder=encoder,
-        pool_anomalies=pool_anomalies,
         cap=cap,
         seed=seed,
         as_tensor=as_tensor,
@@ -411,15 +475,10 @@ def main() -> None:
         help="Encoder name matching saved embeds (default: CLIP)",
     )
     parser.add_argument(
-        "--pool-anomalies",
-        action="store_true",
-        help="Pool all non-zero labels to 1 (binary anomaly detection mode)",
-    )
-    parser.add_argument(
         "--cap",
-        type=int,
+        action=argparse.BooleanOptionalAction,
         default=None,
-        help="Optional override for per-dataset sample cap",
+        help="Enable automatic equal-dataset and balanced-label capping",
     )
     parser.add_argument(
         "--batch-size",
@@ -438,14 +497,12 @@ def main() -> None:
     print(f"\n--- Loading {args.modality} embeddings ---")
     print(f"  Encoder         : {args.encoder}")
     print(f"  Split           : {args.split}")
-    print(f"  Pool anomalies  : {args.pool_anomalies}")
-    print(f"  Cap override    : {args.cap}")
+    print(f"  Cap enabled     : {args.cap}")
 
     dataset = build_embeds_dataset(
         modality=args.modality,
         split=args.split,
         encoder=args.encoder,
-        pool_anomalies=args.pool_anomalies,
         cap=args.cap,
         seed=args.seed,
     )

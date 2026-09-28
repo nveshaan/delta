@@ -2,43 +2,34 @@ _target_: datasets.embeds.MRIEmbedsDataset
 modality: mri
 data_root: data/mri
 encoder: CLIP
-pool_anomalies: false
+cap: true
 seed: 42
 
 datasets:
   Brain Tumor MRI Dataset:
     tag: train
-    cap: 2000
     labels: null
   BraTS2021:
     tag: train
-    cap: 2000
     labels: null
   Br35H:
     tag: train
-    cap: 2000
     labels: null
   BrainTumor:
     tag: test
-    cap: null
     labels: null
   brain_tumor_dataset:
     tag: test
-    cap: null
     labels: null
   brisc2025:
     tag: test
-    cap: 2000
     labels: null
   Epic and CSCR hospital Dataset:
     tag: test
-    cap: 2000
     labels: null
   Alzheimer_s Dataset:
     tag: test
-    cap: 2000
     labels: null
   OASIS Alzheimer's Detection:
     tag: test
-    cap: 2000
     labels: null

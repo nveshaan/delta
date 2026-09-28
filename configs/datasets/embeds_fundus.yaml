@@ -2,35 +2,28 @@ _target_: datasets.embeds.FundusEmbedsDataset
 modality: fundus
 data_root: data/fundus
 encoder: CLIP
-pool_anomalies: false
+cap: true
 seed: 42
 
 datasets:
   AMDNet23 Dataset:
     tag: train
-    cap: 2000
     labels: null
   Diabetic Retinopathy and Retinal Diseases Fundus I:
     tag: train
-    cap: 2000
     labels: null
   Eye Disease Image Dataset:
     tag: train
-    cap: 2000
     labels: null
   LAG:
     tag: test
-    cap: null
     labels: null
   G1020:
     tag: test
-    cap: null
     labels: null
   ORIGA:
     tag: test
-    cap: null
     labels: null
   Retinal Fundus Images:
     tag: test
-    cap: null
     labels: null
