@@ -3,6 +3,7 @@ modality: mri
 data_root: data/mri
 encoder: CLIP
 cap: true
+max_dataset_size: 10000
 seed: 42
 
 datasets:

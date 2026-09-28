@@ -3,6 +3,7 @@ modality: chest
 data_root: data/chest
 encoder: CLIP
 cap: true
+max_dataset_size: 10000
 seed: 42
 
 datasets:

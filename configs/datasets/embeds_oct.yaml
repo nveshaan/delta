@@ -3,6 +3,7 @@ modality: oct
 data_root: data/oct
 encoder: CLIP
 cap: true
+max_dataset_size: 10000
 seed: 42
 
 datasets:

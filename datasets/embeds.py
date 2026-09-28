@@ -121,11 +121,14 @@ def _balanced_binary_indices(labels: np.ndarray, cap: int, seed: int) -> np.ndar
     return np.sort(np.asarray(selected, dtype=np.int64))
 
 
-def _automatic_cap(loaded: list[tuple[str, "SingleEmbedsDataset"]], seed: int) -> dict[str, np.ndarray]:
-    """Build equal-size, class-balanced selections for a split's datasets."""
+def _automatic_cap(
+    loaded: list[tuple[str, "SingleEmbedsDataset"]], seed: int, max_total_size: int
+) -> dict[str, np.ndarray]:
+    """Build equal-size, class-balanced selections within a total-size budget."""
     if not loaded:
         return {}
 
+    dataset_count = len(loaded)
     min_dataset_size = min(len(dataset) for _, dataset in loaded)
     label_counts = []
     max_balanced_sizes = []
@@ -141,8 +144,10 @@ def _automatic_cap(loaded: list[tuple[str, "SingleEmbedsDataset"]], seed: int) -
         else:
             max_balanced_sizes.append(0)
     label_lcm = int(np.lcm.reduce([count for count in label_counts if count], initial=1))
-    common_limit = min([min_dataset_size, *max_balanced_sizes])
-    common_cap = (common_limit // (2 * label_lcm)) * (2 * label_lcm)
+    per_dataset_limit = min(
+        [min_dataset_size, max_total_size // dataset_count, *max_balanced_sizes]
+    )
+    common_cap = (per_dataset_limit // (2 * label_lcm)) * (2 * label_lcm)
 
     selections: dict[str, np.ndarray] = {}
     for offset, (dataset_name, dataset) in enumerate(loaded):
@@ -244,6 +249,7 @@ class ModalityEmbedsDataset(Dataset):
         split: str | None = "train",
         encoder: str = "CLIP",
         cap: bool | None = None,
+        max_dataset_size: int = 10000,
         seed: int = 42,
         as_tensor: bool = True,
         transform: Callable[[torch.Tensor], torch.Tensor] | None = None,
@@ -255,6 +261,9 @@ class ModalityEmbedsDataset(Dataset):
         self.split = split
         self.encoder = encoder
         self.cap_enabled = cap
+        if max_dataset_size <= 0:
+            raise ValueError("max_dataset_size must be positive")
+        self.max_dataset_size = max_dataset_size
         self.seed = seed
         self.as_tensor = as_tensor
         self.transform = transform
@@ -291,6 +300,10 @@ class ModalityEmbedsDataset(Dataset):
 
         if self.cap_enabled is None:
             self.cap_enabled = bool(cfg_dict.get("cap", False))
+        if max_dataset_size == 10000 and "max_dataset_size" in cfg_dict:
+            self.max_dataset_size = int(cfg_dict["max_dataset_size"])
+            if self.max_dataset_size <= 0:
+                raise ValueError("max_dataset_size must be positive")
 
         all_embeds: list[np.ndarray] = []
         all_labels: list[np.ndarray] = []
@@ -327,7 +340,7 @@ class ModalityEmbedsDataset(Dataset):
             if len(sub_ds) > 0:
                 loaded.append((dataset_name, sub_ds))
 
-        selections = _automatic_cap(loaded, self.seed) if self.cap_enabled else {
+        selections = _automatic_cap(loaded, self.seed, self.max_dataset_size) if self.cap_enabled else {
             dataset_name: np.arange(len(sub_ds), dtype=np.int64)
             for dataset_name, sub_ds in loaded
         }
@@ -437,6 +450,7 @@ def build_embeds_dataset(
     split: str = "train",
     encoder: str = "CLIP",
     cap: bool | None = None,
+    max_dataset_size: int = 10000,
     seed: int = 42,
     as_tensor: bool = True,
     **kwargs: Any,
@@ -448,6 +462,7 @@ def build_embeds_dataset(
         split=split,
         encoder=encoder,
         cap=cap,
+        max_dataset_size=max_dataset_size,
         seed=seed,
         as_tensor=as_tensor,
         **kwargs,
@@ -481,6 +496,12 @@ def main() -> None:
         help="Enable automatic equal-dataset and balanced-label capping",
     )
     parser.add_argument(
+        "--max-dataset-size",
+        type=int,
+        default=10000,
+        help="Maximum total samples in the merged dataset when capping (default: 10000)",
+    )
+    parser.add_argument(
         "--batch-size",
         type=int,
         default=32,
@@ -498,12 +519,14 @@ def main() -> None:
     print(f"  Encoder         : {args.encoder}")
     print(f"  Split           : {args.split}")
     print(f"  Cap enabled     : {args.cap}")
+    print(f"  Max dataset size: {args.max_dataset_size}")
 
     dataset = build_embeds_dataset(
         modality=args.modality,
         split=args.split,
         encoder=args.encoder,
         cap=args.cap,
+        max_dataset_size=args.max_dataset_size,
         seed=args.seed,
     )
 
