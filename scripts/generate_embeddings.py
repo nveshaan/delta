@@ -26,6 +26,7 @@ from typing import Any, Callable
 import numpy as np
 import torch
 import torch.nn.functional as F
+from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
@@ -47,7 +48,9 @@ class Encoder:
 def load_settings(path: Path) -> dict[str, Any]:
     if not path.is_file():
         raise FileNotFoundError(f"Embedding config does not exist: {path}")
-    return OmegaConf.to_container(OmegaConf.load(path), resolve=True)
+    with initialize_config_dir(version_base=None, config_dir=str(path.parent.resolve())):
+        config = compose(config_name=path.stem)
+    return OmegaConf.to_container(config, resolve=True)
 
 
 def project_path(value: str | Path) -> Path:
@@ -498,17 +501,25 @@ def encode_dataset(
 # =============================================================================
 
 def dataset_groups(modality: str, settings: dict[str, Any]):
-    from datasets.raw_common import RawDataset
+    from datasets.raw import MODALITY_DATASETS, RawDataset
 
-    config_dir = project_path(settings["dataset_config_dir"])
-    config_pattern = settings.get("dataset_config_pattern", "raw_{modality}.yaml")
-    config_file = config_dir / config_pattern.format(modality=modality)
-    if not config_file.is_file():
-        raise FileNotFoundError(f"Modality config does not exist: {config_file}")
+    config = settings["data"][modality]
+    dataset_cls = MODALITY_DATASETS.get(modality.lower(), RawDataset)
+    seed = int(config.get("seed", 42))
+    sample_strategy = config.get("sample_strategy")
+    image_extensions = config.get("image_extensions")
 
-    config = OmegaConf.load(config_file)
-    for dataset_name, subtypes in config.sources.items():
-        yield dataset_name, subtypes, RawDataset
+    for dataset_name, subtypes in config["sources"].items():
+        def dataset_factory(sources=None, transform=None, **kwargs):
+            kw: dict[str, Any] = {"seed": seed}
+            if sample_strategy is not None:
+                kw["sample_strategy"] = sample_strategy
+            if image_extensions is not None:
+                kw["image_extensions"] = image_extensions
+            kw.update(kwargs)
+            return dataset_cls(sources, transform=transform, **kw)
+
+        yield dataset_name, subtypes, dataset_factory
 
 
 def generate_for_encoder(
@@ -524,7 +535,7 @@ def generate_for_encoder(
     print(f"Loading {name} on {device}...")
     encoder = load_encoder(name, device, settings)
     output_root = project_path(settings["output_root"])
-    defaults = settings.get("defaults", {})
+    defaults = settings.get("runtime", {})
     normalize = defaults.get("normalize", True)
     norm_eps = float(defaults.get("norm_eps", 1e-12))
     output_dtype = defaults.get("output_dtype", "float32")
@@ -532,7 +543,7 @@ def generate_for_encoder(
 
     try:
         for modality in modalities:
-            for dataset_name, subtypes, RawDataset in dataset_groups(modality, settings):
+            for dataset_name, subtypes, dataset_factory in dataset_groups(modality, settings):
                 if dataset_filter:
                     requested = dataset_filter.strip().lower()
                     if requested not in {dataset_name.lower(), safe_name(dataset_name).lower()}:
@@ -548,7 +559,7 @@ def generate_for_encoder(
                     print(f"  {modality}/{dataset_name}: cached")
                     continue
 
-                dataset = RawDataset(subtypes, transform=encoder.preprocess)
+                dataset = dataset_factory(subtypes, transform=encoder.preprocess)
                 labels = np.asarray(dataset.labels, dtype=labels_dtype)
                 print(f"  {modality}/{dataset_name}: {len(dataset)} images")
 
@@ -601,7 +612,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     settings = load_settings(args.config)
-    defaults = settings.get("defaults", {})
+    defaults = settings.get("runtime", {})
 
     seed = args.seed if args.seed is not None else int(defaults.get("seed", 42))
     seed_everything(seed)

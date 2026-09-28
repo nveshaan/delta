@@ -1,6 +1,7 @@
 # DELTA
 
 ## Setup
+
 ```bash
 git clone https://github.com/nveshaan/delta.git
 cd delta
@@ -8,6 +9,7 @@ uv sync
 ```
 
 ## Data
+
 The datasets have to be downloaded externally and are to be placed in the `data/` folder in the following way:
 
 ```bash
@@ -45,20 +47,51 @@ The datasets have to be downloaded externally and are to be placed in the `data/
     └── ZhangLabData OCT
 ```
 
-Then, to generate embeddings of **MedImageInsight**, **MedSigLIP**, **BiomedCLIP**, **UniMedCLIP** and **CLIP**, run the following command:
+## Generate embeddings
+
+To generate embeddings with all configured encoders and modalities, run:
 
 ```bash
 uv run python scripts/generate_embeddings.py
 ```
+
+Useful command-line options include:
+
+```bash
+# Run one encoder and one modality.
+uv run python scripts/generate_embeddings.py \
+    --encoder CLIP \
+    --modality chest
+
+# Process one configured parent dataset.
+uv run python scripts/generate_embeddings.py \
+    --encoder BiomedCLIP \
+    --modality fundus \
+    --dataset "AMDNet23 Dataset"
+
+# Override the batch size, device, or regenerate existing files.
+uv run python scripts/generate_embeddings.py \
+    --batch-size 8 \
+    --device cpu \
+    --overwrite
+```
+
+Use `uv run python scripts/generate_embeddings.py --help` to see all options.
+
+The generated files are written to
+`data/<modality>/<dataset_name>/<encoder>_embeds.npy` and
+`data/<modality>/<dataset_name>/labels.npy`.
 
 > **MedSigLIP** is a gated model. Before running this, request access on its model page on the HF Hub, then authenticate locally with:
 > `hf auth login`
 > (or set the `HF_TOKEN` environment variable).
 
 ## Acknowledgements
+
 - Kar, P., Bordoloi, R., Wolkenhauer, O., & Bej, S. (2026). Anomaly Detection via Mean Shift Density Enhancement. arXiv:2602.03293. https://doi.org/10.48550/arXiv.2602.03293
 
 - Kar, P., Lakshmi, G., & Bej, S. (2026). Improved Anomaly Detection in Medical Images via Mean Shift Density Enhancement. arXiv:2604.19191. https://doi.org/10.48550/arXiv.2604.19191
 
 ## License
+
 This project is distributed under the MIT License. See the `LICENSE` file for details.

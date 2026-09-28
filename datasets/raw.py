@@ -1,8 +1,12 @@
-"""Composable raw-image PyTorch datasets used by the modality configs.
+"""Composable and modality-specific raw-image PyTorch datasets.
 
-The source experiments used a few small, repeated loaders.  This module keeps
+The source experiments used a few small, repeated loaders. This module keeps
 their semantics explicit: folders are non-recursive, samples are sorted before
 deterministic caps are applied, and every loaded image is converted to RGB.
+
+Combines base dataset primitives (folder, CSV, MedIAnomaly loaders) and
+modality-specific dataset definitions for chest, fundus, MRI, and OCT data sources.
+See configs under ``configs/datasets/raw_<modality>.yaml``.
 """
 
 from __future__ import annotations
@@ -17,11 +21,20 @@ from typing import Any, Callable
 from PIL import Image
 import numpy as np
 import torch
-from torch.utils.data import Dataset
+from hydra.utils import instantiate
+from omegaconf import OmegaConf
+from torch.utils.data import DataLoader, Dataset
 
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".dcm"}
 Transform = Callable[[Image.Image], Any] | None
+
+DEFAULT_SAMPLE_STRATEGIES: dict[str, str] = {
+    "chest": "python_sorted",
+    "fundus": "python_ordered",
+    "mri": "numpy_sorted",
+    "oct": "numpy_sorted",
+}
 
 
 def pil_to_tensor(image: Image.Image) -> torch.Tensor:
@@ -154,7 +167,7 @@ class MedIAnomalyDataset(ImageListDataset):
     """Load one labelled ``data.json`` split from ``<root>/images``.
 
     ``split: test`` preserves the test-only evaluation behaviour in the supplied
-    scripts.  The fallback normal_test/abnormal_test layout is also supported.
+    scripts. The fallback normal_test/abnormal_test layout is also supported.
     """
 
     def __init__(self, root: str | Path, split: str = "test", transform: Transform = None):
@@ -332,3 +345,196 @@ class RawDataset(ImageListDataset):
             unique_paths.append(path)
             unique_labels.append(label)
         super().__init__(unique_paths, unique_labels, transform)
+
+
+class ModalityRawDataset(RawDataset):
+    """Aggregate a named modality training/evaluation source from the YAML config."""
+
+    def __init__(
+        self,
+        sources=None,
+        transform: Transform = None,
+        seed: int = 42,
+        sample_strategy: str | None = None,
+        image_extensions: Sequence[str] = tuple(IMAGE_EXTENSIONS),
+        split: str = "train",
+        modality: str | None = None,
+        **sections: Mapping[str, Any],
+    ):
+        selected = sources if sources is not None else select_split(sections, split)["sources"]
+        if sample_strategy is None:
+            if modality:
+                sample_strategy = DEFAULT_SAMPLE_STRATEGIES.get(modality.lower(), "python_sorted")
+            else:
+                sample_strategy = "python_sorted"
+        super().__init__(
+            selected,
+            transform=transform,
+            seed=seed,
+            sample_strategy=sample_strategy,
+            image_extensions=image_extensions,
+        )
+
+
+class ChestRawDataset(ModalityRawDataset):
+    """Aggregate a named chest training/evaluation source from the YAML config."""
+
+    def __init__(
+        self,
+        sources=None,
+        transform: Transform = None,
+        seed: int = 42,
+        sample_strategy: str = "python_sorted",
+        image_extensions: Sequence[str] = tuple(IMAGE_EXTENSIONS),
+        split: str = "train",
+        **sections: Mapping[str, Any],
+    ):
+        super().__init__(
+            sources=sources,
+            transform=transform,
+            seed=seed,
+            sample_strategy=sample_strategy,
+            image_extensions=image_extensions,
+            split=split,
+            modality="chest",
+            **sections,
+        )
+
+
+class FundusRawDataset(ModalityRawDataset):
+    """Aggregate a named fundus training/evaluation source from the YAML config."""
+
+    def __init__(
+        self,
+        sources=None,
+        transform: Transform = None,
+        seed: int = 42,
+        sample_strategy: str = "python_ordered",
+        image_extensions: Sequence[str] = tuple(IMAGE_EXTENSIONS),
+        split: str = "train",
+        **sections: Mapping[str, Any],
+    ):
+        super().__init__(
+            sources=sources,
+            transform=transform,
+            seed=seed,
+            sample_strategy=sample_strategy,
+            image_extensions=image_extensions,
+            split=split,
+            modality="fundus",
+            **sections,
+        )
+
+
+class MRIRawDataset(ModalityRawDataset):
+    """Aggregate a named MRI training/evaluation source from the YAML config."""
+
+    def __init__(
+        self,
+        sources=None,
+        transform: Transform = None,
+        seed: int = 42,
+        sample_strategy: str = "numpy_sorted",
+        image_extensions: Sequence[str] = tuple(IMAGE_EXTENSIONS),
+        split: str = "train",
+        **sections: Mapping[str, Any],
+    ):
+        super().__init__(
+            sources=sources,
+            transform=transform,
+            seed=seed,
+            sample_strategy=sample_strategy,
+            image_extensions=image_extensions,
+            split=split,
+            modality="mri",
+            **sections,
+        )
+
+
+class OCTRawDataset(ModalityRawDataset):
+    """Aggregate a named OCT training/evaluation source from the YAML config."""
+
+    def __init__(
+        self,
+        sources=None,
+        transform: Transform = None,
+        seed: int = 42,
+        sample_strategy: str = "numpy_sorted",
+        image_extensions: Sequence[str] = tuple(IMAGE_EXTENSIONS),
+        split: str = "train",
+        **sections: Mapping[str, Any],
+    ):
+        super().__init__(
+            sources=sources,
+            transform=transform,
+            seed=seed,
+            sample_strategy=sample_strategy,
+            image_extensions=image_extensions,
+            split=split,
+            modality="oct",
+            **sections,
+        )
+
+
+MODALITY_DATASETS: dict[str, type[ModalityRawDataset]] = {
+    "chest": ChestRawDataset,
+    "fundus": FundusRawDataset,
+    "mri": MRIRawDataset,
+    "oct": OCTRawDataset,
+}
+
+
+def build_dataset(
+    config: Mapping[str, Any],
+    split: str | None = None,
+    transform: Transform = None,
+    modality: str | None = None,
+) -> RawDataset:
+    """Build the flat configured source collection."""
+    split = split or "sources"
+    section = select_split(config, split)
+    target_modality = modality or config.get("modality")
+    cls = (
+        MODALITY_DATASETS.get(target_modality.lower(), ModalityRawDataset)
+        if target_modality
+        else ModalityRawDataset
+    )
+    default_strategy = (
+        DEFAULT_SAMPLE_STRATEGIES.get(target_modality.lower(), "python_sorted")
+        if target_modality
+        else "python_sorted"
+    )
+    return cls(
+        section["sources"],
+        transform=transform,
+        seed=int(config.get("seed", 42)),
+        sample_strategy=config.get("sample_strategy", default_strategy),
+        image_extensions=config.get("image_extensions", tuple(IMAGE_EXTENSIONS)),
+    )
+
+
+def main() -> None:
+    """Load one configured split and print one DataLoader batch shape."""
+    import argparse
+    from hydra import compose, initialize_config_dir
+
+    parser = argparse.ArgumentParser(description="Raw dataset loader check.")
+    parser.add_argument(
+        "--modality",
+        choices=["chest", "fundus", "mri", "oct"],
+        default="chest",
+        help="Modality to test (default: chest)",
+    )
+    args, _ = parser.parse_known_args()
+
+    config_dir = Path(__file__).resolve().parents[1] / "configs"
+    with initialize_config_dir(version_base=None, config_dir=str(config_dir)):
+        cfg = compose(config_name="embeddings")
+    modality_cfg = cfg.data[args.modality]
+    dataset = instantiate(modality_cfg, split="train", transform=pil_to_tensor)
+    images, labels = next(iter(DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)))
+    print(f"{args.modality}: image batch shape={tuple(images.shape)}, labels shape={tuple(labels.shape)}")
+
+
+if __name__ == "__main__":
+    main()

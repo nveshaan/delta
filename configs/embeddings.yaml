@@ -1,10 +1,15 @@
 # Runtime and model settings for scripts/generate_embeddings.py.
-dataset_config_dir: configs/datasets
-dataset_config_pattern: "raw_{modality}.yaml"
+defaults:
+  - _self_
+  - datasets/raw_chest@data.chest
+  - datasets/raw_fundus@data.fundus
+  - datasets/raw_mri@data.mri
+  - datasets/raw_oct@data.oct
+
 output_root: data
 modalities: [chest, fundus, mri, oct]
 
-defaults:
+runtime:
   batch_size: 16
   num_workers: 0
   device: auto
