@@ -143,6 +143,22 @@ uv run mlflow ui --backend-store-uri sqlite:///experiments/mlruns.db \
 
 Use `uv run python scripts/few_shot.py --help` for all command-line options.
 
+## Zero-shot evaluation
+
+Evaluate the latest matching distilled few-shot MLP on the test split:
+
+```bash
+uv run python scripts/zero_shot.py \
+    method=fuse \
+    modality=chest \
+    encoder=CLIP \
+    support_size=5
+```
+
+The script downloads `model.pt` from the matching `few_shot` MLflow run,
+evaluates it on `split=test`, and logs per-dataset metrics in a new
+`zero_shot` MLflow run.
+
 ## Acknowledgements
 
 - Kar, P., Bordoloi, R., Wolkenhauer, O., & Bej, S. (2026). Anomaly Detection via Mean Shift Density Enhancement. arXiv:2602.03293. https://doi.org/10.48550/arXiv.2602.03293

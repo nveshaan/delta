@@ -1,0 +1,32 @@
+defaults:
+  - _self_
+  - modality: chest
+  - method: fuse
+  - override hydra/job_logging: disabled
+  - override hydra/hydra_logging: disabled
+
+hydra:
+  run:
+    dir: .
+  sweep:
+    dir: ${oc.env:TMPDIR,/tmp}/delta_hydra
+    subdir: ""
+  output_subdir: null
+  job:
+    chdir: false
+
+encoder: CLIP
+split: test
+support_size: 5
+seed: 42
+device: auto
+
+mlp:
+  _target_: models.VanillaNetwork
+
+mlflow:
+  tracking_uri: sqlite:///experiments/mlruns.db
+  artifact_location: experiments/mlartifacts
+  experiment_name: delta
+  run_name: zero_shot_${hydra:runtime.choices.method}_${modality.modality}_${encoder}
+  type: zero_shot
