@@ -12,7 +12,6 @@ Outputs:
 
 from __future__ import annotations
 
-import argparse
 import gc
 import os
 import random
@@ -26,13 +25,12 @@ from typing import Any, Callable
 import numpy as np
 import torch
 import torch.nn.functional as F
-from hydra import compose, initialize_config_dir
-from omegaconf import OmegaConf
+import hydra
+from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CONFIG_PATH = PROJECT_ROOT / "configs" / "embeddings.yaml"
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -43,14 +41,6 @@ class Encoder:
     model: Any
     preprocess: Callable
     encode_batch: Callable[[torch.Tensor], Any]
-
-
-def load_settings(path: Path) -> dict[str, Any]:
-    if not path.is_file():
-        raise FileNotFoundError(f"Embedding config does not exist: {path}")
-    with initialize_config_dir(version_base=None, config_dir=str(path.parent.resolve())):
-        config = compose(config_name=path.stem)
-    return OmegaConf.to_container(config, resolve=True)
 
 
 def project_path(value: str | Path) -> Path:
@@ -596,29 +586,20 @@ def generate_for_encoder(
         unload_encoder(encoder, device)
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
-    parser.add_argument("--modality", action="append")
-    parser.add_argument("--encoder", action="append")
-    parser.add_argument("--dataset", help="Parent folder name or sanitized filename stem")
-    parser.add_argument("--batch-size", type=int)
-    parser.add_argument("--device")
-    parser.add_argument("--seed", type=int)
-    parser.add_argument("--overwrite", action="store_true")
-    return parser.parse_args()
-
-
-def main() -> None:
-    args = parse_args()
-    settings = load_settings(args.config)
+@hydra.main(version_base=None, config_path="../configs", config_name="embeddings")
+def main(cfg: DictConfig) -> None:
+    settings = OmegaConf.to_container(cfg, resolve=True)
     defaults = settings.get("runtime", {})
 
-    seed = args.seed if args.seed is not None else int(defaults.get("seed", 42))
+    seed = int(defaults.get("seed", 42))
     seed_everything(seed)
 
-    modalities = args.modality or list(settings["modalities"])
-    encoders = args.encoder or list(settings["encoders"])
+    selected_modality = settings.get("modality")
+    selected_encoder = settings.get("encoder")
+    modalities = ([selected_modality] if isinstance(selected_modality, str)
+                  else selected_modality or list(settings["modalities"]))
+    encoders = ([selected_encoder] if isinstance(selected_encoder, str)
+                else selected_encoder or list(settings["encoders"]))
 
     unknown_modalities = set(modalities) - set(settings["modalities"])
     unknown_encoders = set(encoders) - set(settings["encoders"])
@@ -627,22 +608,22 @@ def main() -> None:
     if unknown_encoders:
         raise ValueError(f"Unknown encoders: {sorted(unknown_encoders)}")
 
-    batch_size = args.batch_size or int(defaults.get("batch_size", 16))
+    batch_size = int(defaults.get("batch_size", 16))
     if batch_size < 1:
-        raise ValueError("--batch-size must be positive")
+        raise ValueError("runtime.batch_size must be positive")
 
     num_workers = int(defaults.get("num_workers", 0))
-    device = choose_device(args.device or defaults.get("device", "auto"))
+    device = choose_device(defaults.get("device", "auto"))
 
     for encoder_name in encoders:
         generate_for_encoder(
             name=encoder_name,
             modalities=modalities,
-            dataset_filter=args.dataset,
+            dataset_filter=settings.get("dataset"),
             batch_size=batch_size,
             num_workers=num_workers,
             device=device,
-            overwrite=args.overwrite,
+            overwrite=bool(settings.get("overwrite", False)),
             settings=settings,
         )
 

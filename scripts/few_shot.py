@@ -139,7 +139,7 @@ def _run_msde_gde(embeddings: torch.Tensor, binary_labels: torch.Tensor, cfg: Di
     gde = GDEScorer().fit(shifted_normals)
 
     joint_msde = MeanShiftDensityEnhancement(**msde_kwargs)
-    joint_labels = binary_labels.to(device=device) if bool(cfg.label_aware_joint_shift) else None
+    joint_labels = binary_labels.to(device=device_name) if bool(cfg.label_aware_joint_shift) else None
     shifted_all, _, _ = joint_msde(values, labels=joint_labels)
     return gde.score(shifted_all)
 
@@ -287,12 +287,14 @@ def main(cfg: DictConfig) -> None:
         client.create_experiment(experiment_name, artifact_location=artifact_location)
     mlflow.set_experiment(experiment_name)
 
-    dataset = instantiate(cfg.datasets)
+    dataset_cfg = cfg.datasets
+    dataset = instantiate(dataset_cfg)
     embeddings, global_labels = dataset.get_data()
     binary_labels, _ = _binary_labels(dataset)
     support_indices, query_indices = _sample_support(binary_labels, int(cfg.support_size), int(cfg.seed))
     method_name = str(cfg.method).lower()
-    pseudolabeler = instantiate(cfg.methods)
+    method_cfg = cfg.methods
+    pseudolabeler = instantiate(method_cfg)
     device = _resolve_device(str(cfg.msde.device))
     if method_name in {"laplacianshot_msde", "knnvote_msde"}:
         working_embeddings, pseudo_labels, confidence, _ = pseudolabeler(

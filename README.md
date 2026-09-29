@@ -38,7 +38,7 @@ The datasets have to be downloaded externally and are to be placed in the `data/
 │   ├── BraTS2021
 │   ├── brisc2025
 │   ├── Epic and CSCR hospital Dataset
-│   └── OASIS Alzheimer,s Detection
+│   └── OASIS Alzheimer's Detection
 └── oct
     ├── ARMD OCT
     ├── OCT2017
@@ -60,23 +60,23 @@ Useful command-line options include:
 ```bash
 # Run one encoder and one modality.
 uv run python scripts/generate_embeddings.py \
-    --encoder CLIP \
-    --modality chest
+    encoder=CLIP \
+    modality=chest
 
 # Process one configured parent dataset.
 uv run python scripts/generate_embeddings.py \
-    --encoder BiomedCLIP \
-    --modality fundus \
-    --dataset "AMDNet23 Dataset"
+    encoder=BiomedCLIP \
+    modality=fundus \
+    dataset="AMDNet23 Dataset"
 
 # Override the batch size, device, or regenerate existing files.
 uv run python scripts/generate_embeddings.py \
-    --batch-size 8 \
-    --device cpu \
-    --overwrite
+    runtime.batch_size=8 \
+    runtime.device=cpu \
+    overwrite=true
 ```
 
-Use `uv run python scripts/generate_embeddings.py --help` to see all options.
+Use `uv run python scripts/generate_embeddings.py --help` for all command-line options.
 
 The generated files are written to
 `data/<modality>/<dataset_name>/<encoder>_embeds.npy` and

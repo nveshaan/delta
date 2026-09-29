@@ -8,6 +8,10 @@ defaults:
 
 output_root: data
 modalities: [chest, fundus, mri, oct]
+modality: null
+encoder: null
+dataset: null
+overwrite: false
 
 runtime:
   batch_size: 16
