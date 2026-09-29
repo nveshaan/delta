@@ -171,21 +171,23 @@ def _log_metric_runs(
     artifact_run_id: str,
 ) -> None:
     for row in rows:
-        for source_name, metric_name in (("auroc", "auroc"), ("auprc", "auprc"), ("precision_at_n", "p@n")):
-            with mlflow.start_run(run_name=f"{run_type}_{row['dataset']}_{row['comparison']}_{metric_name}"):
-                mlflow.log_params({
-                    "name": metric_name,
-                    "modality": modality,
-                    "dataset": str(row["dataset"]),
-                    "method": method,
-                    "encoder": encoder,
-                    "support_size": support_size,
-                    "type": run_type,
-                    "comparison": str(row["comparison"]),
-                    "mode": mode,
-                    "run_id": artifact_run_id,
-                })
-                mlflow.log_metric("value", float(row[source_name]))
+        with mlflow.start_run(run_name=f"{run_type}_{row['dataset']}_{row['comparison']}"):
+            mlflow.log_params({
+                "modality": modality,
+                "dataset": str(row["dataset"]),
+                "method": method,
+                "encoder": encoder,
+                "support_size": support_size,
+                "type": run_type,
+                "comparison": str(row["comparison"]),
+                "mode": mode,
+                "run_id": artifact_run_id,
+            })
+            mlflow.log_metrics({
+                "auroc": float(row["auroc"]),
+                "auprc": float(row["auprc"]),
+                "p_at_n": float(row["precision_at_n"]),
+            })
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="zero_shot")
