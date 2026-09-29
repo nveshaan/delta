@@ -241,7 +241,6 @@ def main(cfg: DictConfig) -> None:
 
     with mlflow.start_run(
         run_name=str(cfg.mlflow.run_name),
-        tags={"type": str(cfg.mlflow.type), "modality": modality_name, "method": method_name},
     ) as root_run:
         staging_root = PROJECT_ROOT / "experiments"
         staging_root.mkdir(parents=True, exist_ok=True)
