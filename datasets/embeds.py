@@ -279,10 +279,16 @@ class ModalityEmbedsDataset(Dataset):
             resolved_config_path = (
                 Path(config_path)
                 if config_path is not None
-                else PROJECT_ROOT / "configs" / "datasets" / f"{modality}.yaml"
+                else PROJECT_ROOT / "configs" / "modality" / f"{modality}.yaml"
             )
             if resolved_config_path.is_file():
                 loaded = OmegaConf.load(resolved_config_path)
+                # The modality configs are also Hydra targets and use these
+                # interpolations. Resolve them when this dataset is created
+                # directly, outside Hydra composition.
+                loaded.encoder = self.encoder
+                loaded.split = self.split
+                loaded.seed = self.seed
                 cfg_dict = OmegaConf.to_container(loaded, resolve=True)
 
         if datasets is None:
