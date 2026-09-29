@@ -45,8 +45,6 @@ training:
   patience: 7
   seed: ${seed}
 
-output_dir: experiments/${mlflow.type}
-
 mlflow:
   tracking_uri: sqlite:///experiments/mlruns.db
   artifact_location: experiments/mlartifacts

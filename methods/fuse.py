@@ -25,6 +25,7 @@ FuseMode = Literal[
     "fuse_no_random_walk",
     "fuse",
 ]
+FuseBackend = Literal["pytorch", "numpy"]
 
 DEFAULT_DEVICE = (
     "mps" if torch.backends.mps.is_available()
@@ -38,6 +39,7 @@ class FuseConfig:
     """Runtime options for FUSE and the five supported ablations."""
 
     mode: FuseMode = "fuse"
+    backend: FuseBackend = "pytorch"
     k_nn: int = 15
     k_vote: int = 5
     confidence: float = 0.8
@@ -54,6 +56,8 @@ class FuseConfig:
     device: str = "auto"
 
     def __post_init__(self) -> None:
+        if self.backend not in {"pytorch", "numpy"}:
+            raise ValueError("backend must be one of: pytorch, numpy")
         if self.mode not in {
             "knn_only", "fuse_no_modularity", "fuse_no_supervised",
             "fuse_no_random_walk", "fuse",
@@ -213,6 +217,80 @@ def _fuse_embedding(
     return embedding[:, : min(config.k_embed, n_nodes)].detach()
 
 
+def _fuse_embedding_numpy(
+    embeddings: torch.Tensor,
+    label_mask: np.ndarray,
+    labels: np.ndarray,
+    adjacency: list[list[int]],
+    config: FuseConfig,
+) -> torch.Tensor:
+    """Legacy NumPy FUSE backend, wrapped with tensor I/O."""
+    n_nodes = len(embeddings)
+    k_embed = min(config.k_embed, n_nodes)
+    values = embeddings.detach().cpu().numpy().astype(np.float32, copy=False)
+    rows = np.asarray([i for i, neighbours in enumerate(adjacency) for _ in neighbours], dtype=np.int64)
+    cols = np.asarray([j for neighbours in adjacency for j in neighbours], dtype=np.int64)
+    degree = np.asarray([len(neighbours) for neighbours in adjacency], dtype=np.float32)
+    degree_sum = float(degree.sum())
+    if degree_sum == 0:
+        return torch.zeros((n_nodes, k_embed), dtype=torch.float32, device=embeddings.device)
+
+    def adjacency_times(value: np.ndarray) -> np.ndarray:
+        result = np.zeros_like(value)
+        np.add.at(result, rows, value[cols])
+        return result
+
+    walks = _labeled_random_walks(
+        adjacency, label_mask, random_walks=config.random_walks,
+        walk_length=config.walk_length, max_labeled_steps=config.max_labeled_steps,
+        seed=config.seed,
+    )
+    rng = np.random.default_rng(config.seed)
+    fused = rng.standard_normal((n_nodes, k_embed)).astype(np.float32)
+    fused, _ = np.linalg.qr(fused, mode="reduced")
+    fused = fused[:, :k_embed]
+    normal_nodes = np.where(label_mask & (labels == 0))[0]
+    anomaly_nodes = np.where(label_mask & (labels == 1))[0]
+    modularity_weight = 0.0 if config.mode == "fuse_no_modularity" else config.lambda_modularity
+    supervised_weight = 0.0 if config.mode == "fuse_no_supervised" else config.lambda_supervised
+    random_walk_weight = 0.0 if config.mode == "fuse_no_random_walk" else config.lambda_random_walk
+
+    for _ in tqdm(range(config.iterations), desc="FUSE NumPy optimization", unit="iter"):
+        attention = {}
+        if random_walk_weight:
+            for i, visited in walks.items():
+                unique = np.unique(visited)
+                if len(unique):
+                    similarity = fused[i] @ fused[unique].T
+                    weights = np.exp(similarity - similarity.max())
+                    weights /= weights.sum() + 1e-8
+                    attention[i] = (unique, weights)
+
+        graph_gradient = np.zeros_like(fused)
+        if modularity_weight:
+            graph_gradient = (adjacency_times(fused) - degree[:, None] * fused.sum(axis=0, keepdims=True) / degree_sum) / degree_sum
+        supervised_gradient = np.zeros_like(fused)
+        if supervised_weight:
+            target = fused.copy()
+            if len(normal_nodes):
+                target[normal_nodes] = fused[normal_nodes].mean(axis=0)
+            if len(anomaly_nodes):
+                target[anomaly_nodes] = fused[anomaly_nodes].mean(axis=0)
+            supervised_gradient = fused - target
+        walk_gradient = np.zeros_like(fused)
+        if random_walk_weight:
+            for i, (nodes, weights) in attention.items():
+                walk_gradient[i] = fused[i] - (weights[:, None] * fused[nodes]).sum(axis=0)
+        fused += config.learning_rate * (
+            modularity_weight * graph_gradient
+            - supervised_weight * supervised_gradient
+            - random_walk_weight * walk_gradient
+        )
+        fused, _ = np.linalg.qr(fused, mode="reduced")
+        fused = fused[:, :k_embed]
+    return torch.from_numpy(fused).to(device=embeddings.device)
+
+
 def _seed_knn_vote(seed_embedding: torch.Tensor, seed_labels: torch.Tensor,
                    unlabeled_embedding: torch.Tensor, k_vote: int) -> tuple[torch.Tensor, torch.Tensor]:
     if len(unlabeled_embedding) == 0:
@@ -234,7 +312,6 @@ def pseudolabel(
     unlabeled: torch.Tensor,
     config: FuseConfig | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    logger.info("FUSE pseudolabeling: %d seeds, %d query samples, mode=%s", len(seed_normals) + len(seed_anomalies), len(unlabeled), config.mode)
     """Return pseudolabels and confidences for one joint unlabeled pool.
 
     ``knn_only`` performs seed KNN voting directly in CLIP space. The other
@@ -242,6 +319,7 @@ def pseudolabel(
     are enabled.
     """
     config = config or FuseConfig()
+    logger.info("FUSE pseudolabeling: %d seeds, %d query samples, mode=%s, backend=%s", len(seed_normals) + len(seed_anomalies), len(unlabeled), config.mode, config.backend)
     if len(unlabeled) == 0:
         return (torch.empty(0, dtype=torch.long, device=unlabeled.device),
                 torch.empty(0, dtype=torch.float32, device=unlabeled.device))
@@ -265,7 +343,10 @@ def pseudolabel(
     labels = np.zeros(len(all_embeddings), dtype=int)
     labels[:len(seed_labels)] = seed_labels.cpu().numpy()
     adjacency = _build_knn_graph(all_embeddings, config.k_nn)
-    fused = _fuse_embedding(all_embeddings, label_mask, labels, adjacency, config)
+    if config.backend == "numpy":
+        fused = _fuse_embedding_numpy(all_embeddings, label_mask, labels, adjacency, config)
+    else:
+        fused = _fuse_embedding(all_embeddings, label_mask, labels, adjacency, config)
     return _seed_knn_vote(
         fused[:len(seed_labels)], seed_labels, fused[len(seed_labels):], config.k_vote
     )

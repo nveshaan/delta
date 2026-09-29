@@ -1,5 +1,6 @@
 # FUSE pseudolabeling configuration.
 _target_: methods.fuse.FusePseudolabeler
+backend: numpy  # pytorch | numpy
 
 # Set mode to one of:
 #   knn_only             CLIP + seed KNN pseudolabeling, no FUSE

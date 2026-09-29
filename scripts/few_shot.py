@@ -16,8 +16,10 @@ import argparse
 import json
 import logging
 import random
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -388,8 +390,9 @@ def main(cfg: DictConfig) -> None:
         rows.extend(_pair_metrics(local_scores, local_labels, dataset_name))
 
     with mlflow.start_run(run_name=str(cfg.mlflow.run_name), tags={"type": str(cfg.mlflow.type)}) as root_run:
-        run_dir = root / str(cfg.output_dir) / root_run.info.run_id
-        run_dir.mkdir(parents=True, exist_ok=True)
+        staging_root = root / "experiments"
+        staging_root.mkdir(parents=True, exist_ok=True)
+        run_dir = Path(tempfile.mkdtemp(prefix=f"{cfg.mlflow.type}_", dir=staging_root))
         OmegaConf.save(cfg, run_dir / "few_shot.yaml", resolve=True)
         OmegaConf.save(dataset_cfg, run_dir / "dataset.yaml", resolve=True)
         OmegaConf.save(method_cfg, run_dir / "pseudolabeler.yaml", resolve=True)
@@ -427,7 +430,8 @@ def main(cfg: DictConfig) -> None:
         mlflow.log_metric("n_samples", len(dataset))
         mlflow.log_metric("n_support", len(support_indices))
         mlflow.log_metric("n_query", len(query_indices))
-        print(f"MLflow run: {root_run.info.run_id}\nArtifacts: {run_dir}")
+        shutil.rmtree(run_dir, ignore_errors=True)
+        print(f"MLflow run: {root_run.info.run_id}\nArtifacts stored in MLflow artifact store")
 
 
 if __name__ == "__main__":
