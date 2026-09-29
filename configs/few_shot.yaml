@@ -2,6 +2,8 @@ defaults:
   - datasets: embeds_${modality}
   - methods: ${method}
   - _self_
+  - override hydra/job_logging: disabled
+  - override hydra/hydra_logging: disabled
 
 hydra:
   run:
@@ -9,8 +11,6 @@ hydra:
   output_subdir: null
   job:
     chdir: false
-  job_logging: disabled
-  hydra_logging: disabled
 
 modality: chest
 encoder: CLIP

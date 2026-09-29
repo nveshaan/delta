@@ -5,6 +5,8 @@ defaults:
   - datasets/raw_fundus@data.fundus
   - datasets/raw_mri@data.mri
   - datasets/raw_oct@data.oct
+  - override hydra/job_logging: disabled
+  - override hydra/hydra_logging: disabled
 
 hydra:
   run:
@@ -12,8 +14,6 @@ hydra:
   output_subdir: null
   job:
     chdir: false
-  job_logging: disabled
-  hydra_logging: disabled
 
 output_root: data
 modalities: [chest, fundus, mri, oct]
