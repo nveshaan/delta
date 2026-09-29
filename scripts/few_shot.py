@@ -12,6 +12,7 @@ there is no minibatch slicing in those stages.
 from __future__ import annotations
 
 import csv
+import argparse
 import json
 import random
 import subprocess
@@ -22,6 +23,20 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+
+# Hydra 1.3 passes a lazy help object to argparse. Python 3.14 tightened
+# argparse's help validation to require a string, so normalize that object
+# only during parser validation. This keeps Hydra's CLI/config behavior intact.
+if sys.version_info >= (3, 14):
+    _argparse_check_help = argparse.ArgumentParser._check_help
+
+    def _hydra_argparse_check_help(self, action):
+        if action.help is not None and not isinstance(action.help, str):
+            action.help = str(action.help)
+        return _argparse_check_help(self, action)
+
+    argparse.ArgumentParser._check_help = _hydra_argparse_check_help
+
 import hydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf

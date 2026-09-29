@@ -12,6 +12,7 @@ Outputs:
 
 from __future__ import annotations
 
+import argparse
 import gc
 import os
 import random
@@ -25,6 +26,20 @@ from typing import Any, Callable
 import numpy as np
 import torch
 import torch.nn.functional as F
+
+# Hydra 1.3 passes a lazy help object to argparse. Python 3.14 tightened
+# argparse's help validation to require a string.
+import sys as _sys
+if _sys.version_info >= (3, 14):
+    _argparse_check_help = argparse.ArgumentParser._check_help
+
+    def _hydra_argparse_check_help(self, action):
+        if action.help is not None and not isinstance(action.help, str):
+            action.help = str(action.help)
+        return _argparse_check_help(self, action)
+
+    argparse.ArgumentParser._check_help = _hydra_argparse_check_help
+
 import hydra
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader, Subset
