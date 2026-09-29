@@ -6,6 +6,13 @@ defaults:
   - datasets/raw_mri@data.mri
   - datasets/raw_oct@data.oct
 
+hydra:
+  run:
+    dir: ${hydra:runtime.cwd}
+  output_subdir: null
+  job:
+    chdir: false
+
 output_root: data
 modalities: [chest, fundus, mri, oct]
 modality: null

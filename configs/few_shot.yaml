@@ -3,6 +3,13 @@ defaults:
   - methods: ${method}
   - _self_
 
+hydra:
+  run:
+    dir: ${hydra:runtime.cwd}
+  output_subdir: null
+  job:
+    chdir: false
+
 modality: chest
 encoder: CLIP
 split: train
