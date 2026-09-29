@@ -340,6 +340,9 @@ def main(cfg: DictConfig) -> None:
     method_name = str(HydraConfig.get().runtime.choices["method"]).lower()
     method_cfg = cfg.method
     pseudolabeler = instantiate(method_cfg)
+    modality_name = str(cfg.modality.modality)
+    encoder_name = str(cfg.modality.encoder)
+    split_name = str(cfg.modality.split)
     device = _resolve_device(str(cfg.msde.device))
     if method_name in {"laplacianshot_msde", "knnvote_msde"}:
         logger.info("Generating pseudolabels with %s", method_name)
@@ -389,7 +392,10 @@ def main(cfg: DictConfig) -> None:
         local_scores = full_pseudo_labels.detach().cpu().float()[sample_mask]
         rows.extend(_pair_metrics(local_scores, local_labels, dataset_name))
 
-    with mlflow.start_run(run_name=str(cfg.mlflow.run_name), tags={"type": str(cfg.mlflow.type)}) as root_run:
+    with mlflow.start_run(
+        run_name=str(cfg.mlflow.run_name),
+        tags={"type": str(cfg.mlflow.type), "modality": modality_name, "method": method_name},
+    ) as root_run:
         staging_root = root / "experiments"
         staging_root.mkdir(parents=True, exist_ok=True)
         run_dir = Path(tempfile.mkdtemp(prefix=f"{cfg.mlflow.type}_", dir=staging_root))
@@ -400,15 +406,36 @@ def main(cfg: DictConfig) -> None:
             json.dumps({str(key): value for key, value in dataset.label_metadata.items()}, indent=2)
         )
         mlflow.log_params(_flatten_params(cfg))
+        mlflow.log_params({
+            "type": str(cfg.mlflow.type),
+            "modality": modality_name,
+            "encoder": encoder_name,
+            "split": split_name,
+            "pseudolabelling_method": method_name,
+        })
         commit = _git_commit()
         mlflow.set_tag("git_commit", commit)
         mlflow.log_param("git_commit", commit)
         with mlflow.start_run(run_name="hyperparams", nested=True):
             mlflow.log_params(_flatten_params(cfg))
-            with mlflow.start_run(run_name=str(cfg.modality), nested=True):
-                mlflow.log_param("modality", str(cfg.modality))
+            with mlflow.start_run(run_name=modality_name, nested=True):
+                mlflow.log_params({
+                    "type": str(cfg.mlflow.type),
+                    "modality": modality_name,
+                    "encoder": encoder_name,
+                    "split": split_name,
+                    "pseudolabelling_method": method_name,
+                })
                 for dataset_name in dataset.dataset_names:
                     with mlflow.start_run(run_name=dataset_name, nested=True):
+                        mlflow.log_params({
+                            "type": str(cfg.mlflow.type),
+                            "modality": modality_name,
+                            "dataset": dataset_name,
+                            "encoder": encoder_name,
+                            "split": split_name,
+                            "pseudolabelling_method": method_name,
+                        })
                         dataset_rows = [row for row in rows if row["dataset"] == dataset_name]
                         for row in dataset_rows:
                             prefix = row["comparison"].replace("/", "_")
