@@ -20,10 +20,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import traceback
 from pathlib import Path
 from typing import Any
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
@@ -57,6 +57,7 @@ from methods.msde import DEFAULT_DEVICE, MeanShiftDensityEnhancement
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
+_ACTIVE_STAGING_DIR: Path | None = None
 
 
 def _resolve_device(device: str) -> str:
@@ -260,19 +261,6 @@ def _pair_metrics(scores: torch.Tensor, source_labels: np.ndarray, dataset_name:
     return rows
 
 
-def _save_loss_curve(losses: list[dict[str, float]], path: Path) -> None:
-    figure, axis = plt.subplots(figsize=(7, 4))
-    epochs = [item["epoch"] for item in losses]
-    axis.plot(epochs, [item["train_loss"] for item in losses], label="train")
-    axis.plot(epochs, [item["validation_loss"] for item in losses], label="validation")
-    axis.set(xlabel="epoch", ylabel="MSE", title="MLP distillation loss")
-    axis.legend()
-    axis.grid(alpha=0.25)
-    figure.tight_layout()
-    figure.savefig(path, dpi=150)
-    plt.close(figure)
-
-
 def _git_commit() -> str:
     try:
         return subprocess.check_output(
@@ -305,8 +293,8 @@ def _write_predictions(path: Path, dataset, binary_labels: torch.Tensor, pseudo_
             ])
 
 
-@hydra.main(version_base=None, config_path="../configs", config_name="few_shot")
-def main(cfg: DictConfig) -> None:
+def _execute(cfg: DictConfig) -> None:
+    global _ACTIVE_STAGING_DIR
     cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=True))
     hydra_config = HydraConfig.get()
     override_text = ", ".join(hydra_config.overrides.task)
@@ -401,6 +389,7 @@ def main(cfg: DictConfig) -> None:
         staging_root = root / "experiments"
         staging_root.mkdir(parents=True, exist_ok=True)
         run_dir = Path(tempfile.mkdtemp(prefix=f"{cfg.mlflow.type}_", dir=staging_root))
+        _ACTIVE_STAGING_DIR = run_dir
         OmegaConf.save(cfg, run_dir / "few_shot.yaml", resolve=True)
         OmegaConf.save(dataset_cfg, run_dir / "dataset.yaml", resolve=True)
         OmegaConf.save(method_cfg, run_dir / "pseudolabeler.yaml", resolve=True)
@@ -452,15 +441,58 @@ def main(cfg: DictConfig) -> None:
             writer.writeheader()
             writer.writerows(rows)
         if losses:
-            _save_loss_curve(losses, run_dir / "loss_curve.png")
             _save_losses(losses, run_dir / "losses.csv")
             torch.save(model.state_dict(), run_dir / "model.pt")
+        required_artifacts = [
+            run_dir / "few_shot.yaml",
+            run_dir / "dataset.yaml",
+            run_dir / "pseudolabeler.yaml",
+            run_dir / "label_mapping.json",
+            run_dir / "predictions.csv",
+            run_dir / "metrics.csv",
+        ]
+        if bool(cfg.distill_mlp):
+            required_artifacts.extend([
+                run_dir / "model.pt",
+                run_dir / "losses.csv",
+            ])
+        missing = [str(path.name) for path in required_artifacts if not path.is_file()]
+        if missing:
+            raise RuntimeError(f"Artifact generation incomplete; missing: {missing}")
         mlflow.log_artifacts(str(run_dir))
+        uploaded = {artifact.path for artifact in client.list_artifacts(root_run.info.run_id)}
+        missing_remote = [path.name for path in required_artifacts if path.name not in uploaded]
+        if missing_remote:
+            raise RuntimeError(f"MLflow artifact upload incomplete; missing: {missing_remote}")
         mlflow.log_metric("n_samples", len(dataset))
         mlflow.log_metric("n_support", len(support_indices))
         mlflow.log_metric("n_query", len(query_indices))
         shutil.rmtree(run_dir, ignore_errors=True)
+        _ACTIVE_STAGING_DIR = None
         print(f"MLflow run: {root_run.info.run_id}\nArtifacts stored in MLflow artifact store")
+
+
+@hydra.main(version_base=None, config_path="../configs", config_name="few_shot")
+def main(cfg: DictConfig) -> None:
+    """Run one Hydra job and report errors without stopping a multirun sweep."""
+    global _ACTIVE_STAGING_DIR
+    try:
+        _execute(cfg)
+    except Exception as error:
+        hydra_config = HydraConfig.get()
+        overrides = ", ".join(hydra_config.overrides.task)
+        message = (
+            f"FEW-SHOT JOB FAILED\n"
+            f"overrides=[{overrides}]\n"
+            f"error={type(error).__name__}: {error}"
+        )
+        print(message, file=sys.stderr, flush=True)
+        traceback.print_exc(file=sys.stderr)
+        logger.error(message)
+    finally:
+        if _ACTIVE_STAGING_DIR is not None:
+            shutil.rmtree(_ACTIVE_STAGING_DIR, ignore_errors=True)
+            _ACTIVE_STAGING_DIR = None
 
 
 if __name__ == "__main__":
