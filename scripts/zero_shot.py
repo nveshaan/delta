@@ -14,6 +14,18 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+# Hydra 1.3 passes a lazy help object to argparse. Python 3.14 requires
+# argparse help text to be string-like during parser construction.
+if sys.version_info >= (3, 14):
+    _argparse_check_help = argparse.ArgumentParser._check_help
+
+    def _hydra_argparse_check_help(self, action):
+        if action.help is not None and not isinstance(action.help, str):
+            action.help = str(action.help)
+        return _argparse_check_help(self, action)
+
+    argparse.ArgumentParser._check_help = _hydra_argparse_check_help
+
 import hydra
 import numpy as np
 import torch
