@@ -12,6 +12,8 @@ hydra:
   output_subdir: null
   job:
     chdir: false
+  job_logging: disabled
+  hydra_logging: disabled
 
 output_root: data
 modalities: [chest, fundus, mri, oct]
