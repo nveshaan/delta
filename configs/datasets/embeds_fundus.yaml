@@ -1,10 +1,11 @@
 _target_: datasets.embeds.FundusEmbedsDataset
 modality: fundus
 data_root: data/fundus
-encoder: CLIP
+encoder: ${encoder}
+split: ${split}
+seed: ${seed}
 cap: true
 max_dataset_size: 10000
-seed: 42
 
 datasets:
   AMDNet23 Dataset:

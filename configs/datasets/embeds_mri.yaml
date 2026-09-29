@@ -1,10 +1,11 @@
 _target_: datasets.embeds.MRIEmbedsDataset
 modality: mri
 data_root: data/mri
-encoder: CLIP
+encoder: ${encoder}
+split: ${split}
+seed: ${seed}
 cap: true
 max_dataset_size: 10000
-seed: 42
 
 datasets:
   Brain Tumor MRI Dataset:

@@ -1,10 +1,11 @@
 _target_: datasets.embeds.ChestEmbedsDataset
 modality: chest
 data_root: data/chest
-encoder: CLIP
+encoder: ${encoder}
+split: ${split}
+seed: ${seed}
 cap: true
 max_dataset_size: 10000
-seed: 42
 
 datasets:
   cardiomegaly_set:

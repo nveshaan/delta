@@ -1,4 +1,4 @@
-_target_: src.knnvote_msde.KNNVoteMSDEPseudolabeler
+_target_: methods.knnvote_msde.KNNVoteMSDEPseudolabeler
 
 # Current-space KNN pseudolabeling.
 k_vote: 5
@@ -17,5 +17,5 @@ msde_nbd_sample_count_threshold: 70
 msde_shift_threshold: 0.01
 msde_inner_iterations: 3
 
-seed: 42
+seed: ${seed}
 device: auto

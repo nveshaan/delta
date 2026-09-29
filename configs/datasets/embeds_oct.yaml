@@ -1,10 +1,11 @@
 _target_: datasets.embeds.OCTEmbedsDataset
 modality: oct
 data_root: data/oct
-encoder: CLIP
+encoder: ${encoder}
+split: ${split}
+seed: ${seed}
 cap: true
 max_dataset_size: 10000
-seed: 42
 
 datasets:
   OCT2017:

@@ -1,4 +1,4 @@
-_target_: src.laplacianshot.LaplacianShotPseudolabeler
+_target_: methods.laplacianshot.LaplacianShotPseudolabeler
 
 # LaplacianShot constructs labels directly from propagated F scores.
 k_nn: 15
@@ -6,5 +6,5 @@ lambda_laplacian: 0.5
 confidence: 0.75
 solver_iterations: 500
 solver_tolerance: 1.0e-5
-seed: 42
+seed: ${seed}
 device: auto

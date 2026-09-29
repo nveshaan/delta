@@ -49,7 +49,7 @@ The datasets have to be downloaded externally and are to be placed in the `data/
 
 ## Generate embeddings
 
-To generate embeddings with all configured encoders and modalities, run:
+Generate embeddings with all configured encoders and modalities with:
 
 ```bash
 uv run python scripts/generate_embeddings.py
@@ -85,6 +85,64 @@ The generated files are written to
 > **MedSigLIP** is a gated model. Before running this, request access on its model page on the HF Hub, then authenticate locally with:
 > `hf auth login`
 > (or set the `HF_TOKEN` environment variable).
+
+## Few-shot training
+
+Run a default experiment with:
+
+```bash
+mkdir -p experiments
+uv run python scripts/few_shot.py
+```
+
+Other examples:
+
+```bash
+# LaplacianShot pseudolabeling.
+uv run python scripts/few_shot.py \
+    modality=mri \
+    encoder=CLIP \
+    method=laplacianshot \
+    support_size=10
+
+# KNN-vote + MSDE pseudolabeling.
+uv run python scripts/few_shot.py \
+    modality=fundus \
+    method=knnvote_msde
+
+# Distill directly from pseudolabels without MSDE/GDE.
+uv run python scripts/few_shot.py \
+    modality=chest \
+    method=fuse \
+    apply_msde_gde=false
+```
+
+The base experiment configuration is [configs/few_shot.yaml](configs/few_shot.yaml).
+It contains the MSDE/GDE settings, MLP training settings, MLflow settings, and
+the MLP Hydra target. Dataset configurations are selected from
+`configs/datasets/embeds_<modality>.yaml`; pseudolabeler targets are selected
+from `configs/methods/`.
+
+Method-specific ablations stay in the method configs. For example, FUSE modes
+are selected by editing `configs/methods/fuse.yaml`; they are not exposed as
+few-shot command-line flags.
+
+MLflow uses SQLite by default under `experiments/` and
+creates nested runs for:
+
+```text
+type → hyperparams → modality → dataset
+```
+
+The run artifacts include resolved configs, label mappings, predictions, metrics,
+MLP checkpoints, and loss curves. Use the MLflow UI to inspect runs:
+
+```bash
+uv run mlflow ui --backend-store-uri sqlite:///experiments/mlruns.db \
+    --default-artifact-root experiments/mlartifacts
+```
+
+Use `uv run python scripts/few_shot.py --help` for all command-line options.
 
 ## Acknowledgements
 

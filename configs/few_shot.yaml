@@ -1,0 +1,48 @@
+defaults:
+  - datasets: embeds_${modality}
+  - methods: ${method}
+  - _self_
+
+modality: chest
+encoder: CLIP
+split: train
+method: fuse
+support_size: 5
+seed: 42
+
+# If false, the MLP target is trained directly against the binary
+# pseudolabels. If true, scores come from MSDE + GDE before distillation.
+apply_msde_gde: true
+distill_mlp: true
+
+msde:
+  k: 50
+  nbd_sample_count_threshold: 70
+  learning_rate: 0.33
+  max_iters_shift: 8
+  shift_threshold: 0.01
+  device: auto
+  use_chunking: true
+  weight_chunk_size: 2048
+  enable_gradients: false
+  label_aware_joint_shift: false
+
+mlp:
+  _target_: models.VanillaNetwork
+
+training:
+  epochs: 30
+  learning_rate: 1.0e-3
+  weight_decay: 1.0e-4
+  validation_fraction: 0.15
+  patience: 7
+  seed: ${seed}
+
+output_dir: experiments/few_shot
+
+mlflow:
+  tracking_uri: sqlite:///experiments/mlruns.db
+  artifact_location: experiments/mlartifacts
+  experiment_name: delta
+  run_name: ${method}_${modality}
+  type: few
