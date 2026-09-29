@@ -119,7 +119,7 @@ def _find_checkpoint(mlflow, cfg: DictConfig, method_name: str, modality: str) -
         "params.type = 'few_shot' "
         f"and params.modality = '{modality}' "
         f"and params.encoder = '{cfg.encoder}' "
-        f"and params.pseudolabelling_method = '{method_name}' "
+        f"and params.method = '{method_name}' "
         f"and params.support_size = '{int(cfg.support_size)}'"
     )
     runs = mlflow.search_runs(
@@ -134,9 +134,9 @@ def _find_checkpoint(mlflow, cfg: DictConfig, method_name: str, modality: str) -
             f"type=few_shot modality={modality} encoder={cfg.encoder} "
             f"method={method_name} support_size={cfg.support_size}"
         )
-    run_id = str(runs.iloc[0]["run_id"])
-    checkpoint = mlflow.artifacts.download_artifacts(run_id=run_id, artifact_path="model.pt")
-    return run_id, checkpoint
+    artifact_run_id = str(runs.iloc[0]["params.run_id"])
+    checkpoint = mlflow.artifacts.download_artifacts(run_id=artifact_run_id, artifact_path="model.pt")
+    return artifact_run_id, checkpoint
 
 
 def _write_predictions(path: Path, dataset, scores: torch.Tensor, source_labels: np.ndarray, binary: np.ndarray) -> None:
@@ -156,6 +156,36 @@ def _git_commit() -> str:
         ).strip()
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
+
+
+def _log_metric_runs(
+    mlflow,
+    rows: list[dict[str, Any]],
+    *,
+    modality: str,
+    method: str,
+    encoder: str,
+    support_size: int,
+    run_type: str,
+    mode: str,
+    artifact_run_id: str,
+) -> None:
+    for row in rows:
+        for source_name, metric_name in (("auroc", "auroc"), ("auprc", "auprc"), ("precision_at_n", "p@n")):
+            with mlflow.start_run(run_name=f"{run_type}_{row['dataset']}_{row['comparison']}_{metric_name}"):
+                mlflow.log_params({
+                    "name": metric_name,
+                    "modality": modality,
+                    "dataset": str(row["dataset"]),
+                    "method": method,
+                    "encoder": encoder,
+                    "support_size": support_size,
+                    "type": run_type,
+                    "comparison": str(row["comparison"]),
+                    "mode": mode,
+                    "run_id": artifact_run_id,
+                })
+                mlflow.log_metric("value", float(row[source_name]))
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="zero_shot")
@@ -209,27 +239,8 @@ def main(cfg: DictConfig) -> None:
 
     with mlflow.start_run(
         run_name=str(cfg.mlflow.run_name),
-        tags={"type": str(cfg.mlflow.type), "modality": modality_name, "method": method_name,
-              "source_few_shot_run_id": run_id},
+        tags={"type": str(cfg.mlflow.type), "modality": modality_name, "method": method_name},
     ) as root_run:
-        mlflow.log_params(_flatten_params(cfg))
-        mlflow.log_params({
-            "type": str(cfg.mlflow.type),
-            "modality": modality_name,
-            "encoder": str(cfg.encoder),
-            "split": str(cfg.modality.split),
-            "dataset": ",".join(dataset.dataset_names),
-            "pseudolabelling_method": method_name,
-            "source_few_shot_run_id": run_id,
-            "git_commit": _git_commit(),
-        })
-        for row in rows:
-            prefix = _safe_mlflow_key(row["comparison"].replace("/", "_"))
-            for metric in ("auroc", "auprc", "precision_at_n"):
-                metric_key = _safe_mlflow_key(f"{row['dataset']}.{prefix}.{metric}")
-                mlflow.log_metric(metric_key, row[metric])
-        mlflow.log_metric("n_samples", len(dataset))
-
         staging_root = PROJECT_ROOT / "experiments"
         staging_root.mkdir(parents=True, exist_ok=True)
         run_dir = Path(tempfile.mkdtemp(prefix=f"{cfg.mlflow.type}_", dir=staging_root))
@@ -244,7 +255,19 @@ def main(cfg: DictConfig) -> None:
             mlflow.log_artifacts(str(run_dir))
         finally:
             shutil.rmtree(run_dir, ignore_errors=True)
-        print(f"MLflow run: {root_run.info.run_id}\nArtifacts stored in MLflow artifact store", flush=True)
+        artifact_run_id = root_run.info.run_id
+    _log_metric_runs(
+        mlflow,
+        rows,
+        modality=modality_name,
+        method=method_name,
+        encoder=str(cfg.encoder),
+        support_size=int(cfg.support_size),
+        run_type=str(cfg.mlflow.type),
+        mode=str(cfg.method.get("mode") or "none"),
+        artifact_run_id=artifact_run_id,
+    )
+    print(f"MLflow run: {artifact_run_id}\nArtifacts stored in MLflow artifact store", flush=True)
 
 
 if __name__ == "__main__":

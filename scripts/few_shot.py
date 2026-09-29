@@ -276,6 +276,36 @@ def _git_commit() -> str:
         return "unknown"
 
 
+def _log_metric_runs(
+    mlflow,
+    rows: list[dict[str, Any]],
+    *,
+    modality: str,
+    method: str,
+    encoder: str,
+    support_size: int,
+    run_type: str,
+    mode: str,
+    artifact_run_id: str,
+) -> None:
+    for row in rows:
+        for source_name, metric_name in (("auroc", "auroc"), ("auprc", "auprc"), ("precision_at_n", "p@n")):
+            with mlflow.start_run(run_name=f"{run_type}_{row['dataset']}_{row['comparison']}_{metric_name}"):
+                mlflow.log_params({
+                    "name": metric_name,
+                    "modality": modality,
+                    "dataset": str(row["dataset"]),
+                    "method": method,
+                    "encoder": encoder,
+                    "support_size": support_size,
+                    "type": run_type,
+                    "comparison": str(row["comparison"]),
+                    "mode": mode,
+                    "run_id": artifact_run_id,
+                })
+                mlflow.log_metric("value", float(row[source_name]))
+
+
 def _save_losses(losses: list[dict[str, float]], path: Path) -> None:
     with path.open("w", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=["epoch", "train_loss", "validation_loss"])
@@ -402,43 +432,6 @@ def _execute(cfg: DictConfig) -> None:
         (run_dir / "label_mapping.json").write_text(
             json.dumps({str(key): value for key, value in dataset.label_metadata.items()}, indent=2)
         )
-        mlflow.log_params(_flatten_params(cfg))
-        mlflow.log_params({
-            "type": str(cfg.mlflow.type),
-            "modality": modality_name,
-            "encoder": encoder_name,
-            "split": split_name,
-            "pseudolabelling_method": method_name,
-        })
-        commit = _git_commit()
-        mlflow.set_tag("git_commit", commit)
-        mlflow.log_param("git_commit", commit)
-        with mlflow.start_run(run_name="hyperparams", nested=True):
-            mlflow.log_params(_flatten_params(cfg))
-            with mlflow.start_run(run_name=modality_name, nested=True):
-                mlflow.log_params({
-                    "type": str(cfg.mlflow.type),
-                    "modality": modality_name,
-                    "encoder": encoder_name,
-                    "split": split_name,
-                    "pseudolabelling_method": method_name,
-                })
-                for dataset_name in dataset.dataset_names:
-                    with mlflow.start_run(run_name=dataset_name, nested=True):
-                        mlflow.log_params({
-                            "type": str(cfg.mlflow.type),
-                            "modality": modality_name,
-                            "dataset": dataset_name,
-                            "encoder": encoder_name,
-                            "split": split_name,
-                            "pseudolabelling_method": method_name,
-                        })
-                        dataset_rows = [row for row in rows if row["dataset"] == dataset_name]
-                        for row in dataset_rows:
-                            prefix = row["comparison"].replace("/", "_")
-                            for metric in ("auroc", "auprc", "precision_at_n"):
-                                mlflow.log_metric(f"{prefix}.{metric}", row[metric])
-                        mlflow.log_metric("n_samples", sum(name == dataset_name for name in dataset.sample_dataset_names))
         prediction_path = run_dir / "predictions.csv"
         _write_predictions(prediction_path, dataset, binary_labels, full_pseudo_labels.cpu(), full_confidence.cpu(), score_target.cpu(), predictions)
         metrics_path = run_dir / "metrics.csv"
@@ -470,12 +463,21 @@ def _execute(cfg: DictConfig) -> None:
         missing_remote = [path.name for path in required_artifacts if path.name not in uploaded]
         if missing_remote:
             raise RuntimeError(f"MLflow artifact upload incomplete; missing: {missing_remote}")
-        mlflow.log_metric("n_samples", len(dataset))
-        mlflow.log_metric("n_support", len(support_indices))
-        mlflow.log_metric("n_query", len(query_indices))
+        artifact_run_id = root_run.info.run_id
         shutil.rmtree(run_dir, ignore_errors=True)
         _ACTIVE_STAGING_DIR = None
-        print(f"MLflow run: {root_run.info.run_id}\nArtifacts stored in MLflow artifact store")
+    _log_metric_runs(
+        mlflow,
+        rows,
+        modality=modality_name,
+        method=method_name,
+        encoder=encoder_name,
+        support_size=int(cfg.support_size),
+        run_type=str(cfg.mlflow.type),
+        mode=str(cfg.method.get("mode") or "none"),
+        artifact_run_id=artifact_run_id,
+    )
+    print(f"MLflow run: {artifact_run_id}\nArtifacts stored in MLflow artifact store")
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="few_shot")

@@ -9,7 +9,7 @@ hydra:
   run:
     dir: .
   sweep:
-    dir: .
+    dir: ${oc.env:TMPDIR,/tmp}/delta_hydra
     subdir: ""
   output_subdir: null
   job:
