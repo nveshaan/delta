@@ -7,9 +7,9 @@ defaults:
 
 hydra:
   run:
-    dir: ${hydra:runtime.cwd}
+    dir: .
   sweep:
-    dir: ${hydra:runtime.cwd}
+    dir: .
     subdir: ""
   output_subdir: null
   job:
