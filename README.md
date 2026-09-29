@@ -120,11 +120,11 @@ uv run python scripts/few_shot.py \
 The base experiment configuration is [configs/few_shot.yaml](configs/few_shot.yaml).
 It contains the MSDE/GDE settings, MLP training settings, MLflow settings, and
 the MLP Hydra target. Dataset configurations are selected from
-`configs/datasets/embeds_<modality>.yaml`; pseudolabeler targets are selected
-from `configs/methods/`.
+`configs/modality/<modality>.yaml`; pseudolabeler targets are selected
+from `configs/method/`.
 
 Method-specific ablations stay in the method configs. For example, FUSE modes
-are selected by editing `configs/methods/fuse.yaml`; they are not exposed as
+are selected by editing `configs/method/fuse.yaml`; they are not exposed as
 few-shot command-line flags.
 
 MLflow uses SQLite by default under `experiments/` and

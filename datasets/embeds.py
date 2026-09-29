@@ -3,7 +3,7 @@
 Exposes pre-computed embeddings (<encoder>_embeds.npy) and labels (labels.npy)
 saved by ``scripts/generate_embeddings.py`` as PyTorch datasets.
 
-Modality dataset configs are located in ``configs/datasets/embeds_<modality>.yaml``,
+Modality dataset configs are located in ``configs/modality/<modality>.yaml``,
 where each dataset includes a tag ('train' or 'test') and a sample cap limit
 matching the experimental protocol in stage-2 distillation and evaluation.
 """
@@ -232,7 +232,7 @@ class ModalityEmbedsDataset(Dataset):
     """Aggregate pre-computed embedding datasets for a modality.
 
     Filters datasets by split ('train', 'test', or 'all') using tags specified in
-    configs/datasets/embeds_<modality>.yaml. When capping is enabled, every
+    configs/modality/<modality>.yaml. When capping is enabled, every
     dataset in the selected split contributes equally, with zero and non-zero
     labels balanced within each dataset.
 
@@ -279,7 +279,7 @@ class ModalityEmbedsDataset(Dataset):
             resolved_config_path = (
                 Path(config_path)
                 if config_path is not None
-                else PROJECT_ROOT / "configs" / "datasets" / f"embeds_{modality}.yaml"
+                else PROJECT_ROOT / "configs" / "datasets" / f"{modality}.yaml"
             )
             if resolved_config_path.is_file():
                 loaded = OmegaConf.load(resolved_config_path)
@@ -406,7 +406,7 @@ class ModalityEmbedsDataset(Dataset):
 
 
 class ChestEmbedsDataset(ModalityEmbedsDataset):
-    """Aggregate chest embedding datasets from configs/datasets/embeds_chest.yaml."""
+    """Aggregate chest embedding datasets from configs/modality/chest.yaml."""
 
     def __init__(self, **kwargs: Any):
         kwargs.pop("modality", None)
@@ -414,7 +414,7 @@ class ChestEmbedsDataset(ModalityEmbedsDataset):
 
 
 class FundusEmbedsDataset(ModalityEmbedsDataset):
-    """Aggregate fundus embedding datasets from configs/datasets/embeds_fundus.yaml."""
+    """Aggregate fundus embedding datasets from configs/modality/fundus.yaml."""
 
     def __init__(self, **kwargs: Any):
         kwargs.pop("modality", None)
@@ -422,7 +422,7 @@ class FundusEmbedsDataset(ModalityEmbedsDataset):
 
 
 class MRIEmbedsDataset(ModalityEmbedsDataset):
-    """Aggregate MRI embedding datasets from configs/datasets/embeds_mri.yaml."""
+    """Aggregate MRI embedding datasets from configs/modality/mri.yaml."""
 
     def __init__(self, **kwargs: Any):
         kwargs.pop("modality", None)
@@ -430,7 +430,7 @@ class MRIEmbedsDataset(ModalityEmbedsDataset):
 
 
 class OCTEmbedsDataset(ModalityEmbedsDataset):
-    """Aggregate OCT embedding datasets from configs/datasets/embeds_oct.yaml."""
+    """Aggregate OCT embedding datasets from configs/modality/oct.yaml."""
 
     def __init__(self, **kwargs: Any):
         kwargs.pop("modality", None)

@@ -38,6 +38,7 @@ if sys.version_info >= (3, 14):
     argparse.ArgumentParser._check_help = _hydra_argparse_check_help
 
 import hydra
+from hydra.core.hydra_config import HydraConfig
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 from sklearn.decomposition import PCA
@@ -322,13 +323,13 @@ def main(cfg: DictConfig) -> None:
         client.create_experiment(experiment_name, artifact_location=artifact_location)
     mlflow.set_experiment(experiment_name)
 
-    dataset_cfg = cfg.datasets
+    dataset_cfg = cfg.modality
     dataset = instantiate(dataset_cfg)
     embeddings, global_labels = dataset.get_data()
     binary_labels, _ = _binary_labels(dataset)
     support_indices, query_indices = _sample_support(binary_labels, int(cfg.support_size), int(cfg.seed))
-    method_name = str(cfg.method).lower()
-    method_cfg = cfg.methods
+    method_name = str(HydraConfig.get().runtime.choices["method"]).lower()
+    method_cfg = cfg.method
     pseudolabeler = instantiate(method_cfg)
     device = _resolve_device(str(cfg.msde.device))
     if method_name in {"laplacianshot_msde", "knnvote_msde"}:

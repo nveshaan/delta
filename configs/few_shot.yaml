@@ -1,7 +1,7 @@
 defaults:
-  - datasets: embeds_${modality}
-  - methods: ${method}
   - _self_
+  - modality: chest
+  - method: fuse
   - override hydra/job_logging: disabled
   - override hydra/hydra_logging: disabled
 
@@ -12,10 +12,8 @@ hydra:
   job:
     chdir: false
 
-modality: chest
 encoder: CLIP
 split: train
-method: fuse
 support_size: 5
 seed: 42
 
@@ -53,5 +51,5 @@ mlflow:
   tracking_uri: sqlite:///experiments/mlruns.db
   artifact_location: experiments/mlartifacts
   experiment_name: delta
-  run_name: ${method}_${modality}
+  run_name: ${hydra:runtime.choices.method}_${modality.modality}
   type: few_shot
