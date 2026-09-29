@@ -15,6 +15,7 @@ import csv
 import argparse
 import json
 import logging
+import re
 import random
 import shutil
 import subprocess
@@ -71,7 +72,12 @@ def _flatten_params(value: Any, prefix: str = "") -> dict[str, str | int | float
     if isinstance(value, dict):
         result: dict[str, str | int | float | bool] = {}
         for key, item in value.items():
-            result.update(_flatten_params(item, f"{prefix}.{key}" if prefix else str(key)))
+            raw_key = f"{prefix}.{key}" if prefix else str(key)
+            # MLflow parameter names do not allow apostrophes or other
+            # punctuation present in real dataset names. The original names
+            # remain unchanged in the YAML and dataset parameters.
+            safe_key = re.sub(r"[^A-Za-z0-9_. /:-]", "_", raw_key)
+            result.update(_flatten_params(item, safe_key))
         return result
     if isinstance(value, (list, tuple)):
         return {prefix: json.dumps(value)}

@@ -6,6 +6,7 @@ import argparse
 import csv
 import json
 import logging
+import re
 import random
 import shutil
 import subprocess
@@ -96,7 +97,9 @@ def _flatten_params(value: Any, prefix: str = "") -> dict[str, str | int | float
     if isinstance(value, dict):
         result: dict[str, str | int | float | bool] = {}
         for key, item in value.items():
-            result.update(_flatten_params(item, f"{prefix}.{key}" if prefix else str(key)))
+            raw_key = f"{prefix}.{key}" if prefix else str(key)
+            safe_key = re.sub(r"[^A-Za-z0-9_. /:-]", "_", raw_key)
+            result.update(_flatten_params(item, safe_key))
         return result
     if isinstance(value, (list, tuple)):
         return {prefix: json.dumps(value)}
@@ -105,6 +108,10 @@ def _flatten_params(value: Any, prefix: str = "") -> dict[str, str | int | float
     if isinstance(value, (str, int, float, bool)):
         return {prefix: value}
     return {prefix: str(value)}
+
+
+def _safe_mlflow_key(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_. /:-]", "_", value)
 
 
 def _find_checkpoint(mlflow, cfg: DictConfig, method_name: str, modality: str) -> tuple[str, str]:
@@ -183,6 +190,7 @@ def main(cfg: DictConfig) -> None:
 
     model = instantiate(cfg.mlp).to(device)
     values = embeddings.to(device=device, dtype=torch.float32)
+    model.eval()
     with torch.no_grad():
         model(values[:1])
     model.load_state_dict(torch.load(checkpoint_path, map_location=device, weights_only=True))
@@ -216,9 +224,10 @@ def main(cfg: DictConfig) -> None:
             "git_commit": _git_commit(),
         })
         for row in rows:
-            prefix = row["comparison"].replace("/", "_")
+            prefix = _safe_mlflow_key(row["comparison"].replace("/", "_"))
             for metric in ("auroc", "auprc", "precision_at_n"):
-                mlflow.log_metric(f"{row['dataset']}.{prefix}.{metric}", row[metric])
+                metric_key = _safe_mlflow_key(f"{row['dataset']}.{prefix}.{metric}")
+                mlflow.log_metric(metric_key, row[metric])
         mlflow.log_metric("n_samples", len(dataset))
 
         staging_root = PROJECT_ROOT / "experiments"
