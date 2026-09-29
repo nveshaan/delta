@@ -10,10 +10,14 @@ No post-propagation CLIP-space KNN vote is performed.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 
 import numpy as np
 import torch
 import torch.nn.functional as F
+from tqdm.auto import tqdm
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_DEVICE = (
@@ -100,7 +104,7 @@ def _conjugate_gradient(
     residual_norm = (residual * residual).sum(dim=0)
     initial_norm = residual_norm.clamp_min(torch.finfo(rhs.dtype).eps)
 
-    for _ in range(iterations):
+    for _ in tqdm(range(iterations), desc="LaplacianShot solver", unit="iter"):
         operator_direction = apply_operator(direction)
         denominator = (direction * operator_direction).sum(dim=0).clamp_min(1e-12)
         step = residual_norm / denominator
@@ -141,6 +145,7 @@ def pseudolabel(
     unlabeled: torch.Tensor,
     config: LaplacianShotConfig | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    logger.info("LaplacianShot pseudolabeling: %d seeds, %d query samples", len(seed_normals) + len(seed_anomalies), len(unlabeled))
     """Generate labels/confidences directly from Laplacian propagation.
 
     Inputs and outputs are PyTorch tensors. Output labels are ``0`` for normal

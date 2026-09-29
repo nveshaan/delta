@@ -14,6 +14,7 @@ from __future__ import annotations
 import csv
 import argparse
 import json
+import logging
 import random
 import subprocess
 import sys
@@ -44,12 +45,16 @@ from omegaconf import DictConfig, OmegaConf
 from sklearn.decomposition import PCA
 from sklearn.metrics import average_precision_score, roc_auc_score
 from sklearn.model_selection import train_test_split
+from tqdm.auto import tqdm
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from methods.msde import DEFAULT_DEVICE, MeanShiftDensityEnhancement
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 
 def _resolve_device(device: str) -> str:
@@ -186,7 +191,7 @@ def _train_mlp(embeddings: torch.Tensor, targets: torch.Tensor, model_cfg: DictC
     best_state = None
     patience = 0
     losses: list[dict[str, float]] = []
-    for epoch in range(int(train_cfg.epochs)):
+    for epoch in tqdm(range(int(train_cfg.epochs)), desc="MLP distillation", unit="epoch"):
         model.train()
         prediction = model(values[train_idx])
         loss = torch.nn.functional.mse_loss(prediction, target_values[train_idx])
@@ -301,6 +306,7 @@ def _write_predictions(path: Path, dataset, binary_labels: torch.Tensor, pseudo_
 @hydra.main(version_base=None, config_path="../configs", config_name="few_shot")
 def main(cfg: DictConfig) -> None:
     cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=True))
+    logger.info("Starting few-shot pipeline: modality=%s method=%s split=%s", cfg.modality.modality, HydraConfig.get().runtime.choices["method"], cfg.modality.split)
 
     try:
         import mlflow
@@ -326,6 +332,7 @@ def main(cfg: DictConfig) -> None:
     dataset_cfg = cfg.modality
     dataset = instantiate(dataset_cfg)
     embeddings, global_labels = dataset.get_data()
+    logger.info("Loaded %d samples from %d datasets", len(dataset), len(dataset.dataset_names))
     binary_labels, _ = _binary_labels(dataset)
     support_indices, query_indices = _sample_support(binary_labels, int(cfg.support_size), int(cfg.seed))
     method_name = str(HydraConfig.get().runtime.choices["method"]).lower()
@@ -333,6 +340,7 @@ def main(cfg: DictConfig) -> None:
     pseudolabeler = instantiate(method_cfg)
     device = _resolve_device(str(cfg.msde.device))
     if method_name in {"laplacianshot_msde", "knnvote_msde"}:
+        logger.info("Generating pseudolabels with %s", method_name)
         working_embeddings, pseudo_labels, confidence, _ = pseudolabeler(
             embeddings.to(device), binary_labels.to(device), support_indices.to(device), query_indices.to(device)
         )
@@ -349,6 +357,7 @@ def main(cfg: DictConfig) -> None:
     full_confidence[query_indices.to(device)] = confidence
 
     if bool(cfg.apply_msde_gde):
+        logger.info("Running MSDE + GDE scoring")
         scores = _run_msde_gde(working_embeddings, full_pseudo_labels, cfg.msde)
         score_target = scores.to(device)
     else:
@@ -359,6 +368,7 @@ def main(cfg: DictConfig) -> None:
     losses: list[dict[str, float]] = []
     predictions = None
     if bool(cfg.distill_mlp):
+        logger.info("Distilling scores into MLP")
         model, losses, predictions = _train_mlp(working_embeddings, score_target, cfg.mlp, cfg.training, device)
         final_scores = predictions
     else:

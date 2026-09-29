@@ -8,10 +8,14 @@ after seed-neighbour voting.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from typing import Literal
 
 import numpy as np
 import torch
+from tqdm.auto import tqdm
+
+logger = logging.getLogger(__name__)
 
 
 FuseMode = Literal[
@@ -167,7 +171,7 @@ def _fuse_embedding(
     supervised_weight = 0.0 if config.mode == "fuse_no_supervised" else config.lambda_supervised
     random_walk_weight = 0.0 if config.mode == "fuse_no_random_walk" else config.lambda_random_walk
 
-    for _ in range(config.iterations):
+    for _ in tqdm(range(config.iterations), desc="FUSE optimization", unit="iter"):
         attention: dict[int, tuple[torch.Tensor, torch.Tensor]] = {}
         if random_walk_weight:
             for i, visited in walks.items():
@@ -230,6 +234,7 @@ def pseudolabel(
     unlabeled: torch.Tensor,
     config: FuseConfig | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    logger.info("FUSE pseudolabeling: %d seeds, %d query samples, mode=%s", len(seed_normals) + len(seed_anomalies), len(unlabeled), config.mode)
     """Return pseudolabels and confidences for one joint unlabeled pool.
 
     ``knn_only`` performs seed KNN voting directly in CLIP space. The other

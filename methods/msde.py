@@ -39,8 +39,10 @@ def _configure_logging(log_file):
         logger.addHandler(handler)
         logger.setLevel(logging.DEBUG)
     else:
-        logger.addHandler(logging.NullHandler())
-        logger.setLevel(logging.CRITICAL + 1)
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
 
 
 _SPARSE_MM_SUPPORT_CACHE = {}

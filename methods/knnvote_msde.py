@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from typing import Literal
 
 import torch
 import torch.nn.functional as F
+from tqdm.auto import tqdm
+
+logger = logging.getLogger(__name__)
 
 from .msde import DEFAULT_DEVICE, MeanShiftDensityEnhancement
 
@@ -91,6 +95,7 @@ def refine(
     movement_history)`` as PyTorch tensors.
     """
     config = config or KNNVoteMSDEConfig()
+    logger.info("KNNVote-MSDE refinement: %d samples, mode=%s", len(embeddings), config.mode)
     device = _resolve_device(config.device)
     working = embeddings.to(device=device, dtype=torch.float32).clone()
     labels = labels.to(device=device, dtype=torch.long)
@@ -108,7 +113,7 @@ def refine(
     torch.manual_seed(config.seed)
 
     with torch.no_grad():
-        for _ in range(config.em_rounds):
+        for _ in tqdm(range(config.em_rounds), desc="KNNVote-MSDE", unit="round"):
             final_labels, final_confidence = _knn_vote(
                 working[support_indices], support_labels, working[query_indices], config.k_vote
             )

@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from typing import Literal
 
 import torch
 import torch.nn.functional as F
+from tqdm.auto import tqdm
+
+logger = logging.getLogger(__name__)
 
 from .msde import DEFAULT_DEVICE, MeanShiftDensityEnhancement, _sparse_mm_supported
 
@@ -117,7 +121,7 @@ def _laplacian_pseudolabel(
             return dense @ values / degree
 
     assignments = torch.softmax(-unary, dim=1)
-    for _ in range(config.laplacian_iterations):
+    for _ in tqdm(range(config.laplacian_iterations), desc="Laplacian propagation", unit="iter", leave=False):
         updated = torch.softmax(
             -unary + config.laplacian_lambda * smooth(assignments), dim=1
         )
@@ -143,6 +147,7 @@ def refine(
     configured device.
     """
     config = config or LaplacianShotMSDEConfig()
+    logger.info("LaplacianShot-MSDE refinement: %d samples, mode=%s", len(embeddings), config.mode)
     device = _resolve_device(config.device)
     working = embeddings.to(device=device, dtype=torch.float32).clone()
     labels = labels.to(device=device, dtype=torch.long)
@@ -161,7 +166,7 @@ def refine(
 
     torch.manual_seed(config.seed)
     with torch.no_grad():
-        for _ in range(config.em_rounds):
+        for _ in tqdm(range(config.em_rounds), desc="LaplacianShot-MSDE", unit="round"):
             final_labels, final_confidence = _laplacian_pseudolabel(
                 working[support_indices], support_labels, working[query_indices],
                 n_classes, config,
