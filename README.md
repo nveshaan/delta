@@ -91,7 +91,6 @@ The generated files are written to
 Run a default experiment with:
 
 ```bash
-mkdir -p experiments
 uv run python scripts/few_shot.py
 ```
 
