@@ -14,6 +14,7 @@ from __future__ import annotations
 import csv
 import json
 import random
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -145,7 +146,7 @@ def _run_msde_gde(embeddings: torch.Tensor, binary_labels: torch.Tensor, cfg: Di
 
 
 def _train_mlp(embeddings: torch.Tensor, targets: torch.Tensor, model_cfg: DictConfig,
-               train_cfg: DictConfig, device: str) -> tuple[torch.nn.Module, list[float], torch.Tensor]:
+               train_cfg: DictConfig, device: str) -> tuple[torch.nn.Module, list[dict[str, float]], torch.Tensor]:
     model = instantiate(model_cfg).to(device)
     values = embeddings.to(device=device, dtype=torch.float32)
     target_values = targets.to(device=device, dtype=torch.float32)
@@ -168,8 +169,8 @@ def _train_mlp(embeddings: torch.Tensor, targets: torch.Tensor, model_cfg: DictC
     best_loss = float("inf")
     best_state = None
     patience = 0
-    losses: list[float] = []
-    for _ in range(int(train_cfg.epochs)):
+    losses: list[dict[str, float]] = []
+    for epoch in range(int(train_cfg.epochs)):
         model.train()
         prediction = model(values[train_idx])
         loss = torch.nn.functional.mse_loss(prediction, target_values[train_idx])
@@ -181,7 +182,7 @@ def _train_mlp(embeddings: torch.Tensor, targets: torch.Tensor, model_cfg: DictC
             validation_loss = torch.nn.functional.mse_loss(
                 model(values[validation_idx]), target_values[validation_idx]
             ).item()
-        losses.append(float(validation_loss))
+        losses.append({"epoch": float(epoch + 1), "train_loss": float(loss.item()), "validation_loss": float(validation_loss)})
         if validation_loss < best_loss - 1e-5:
             best_loss = validation_loss
             best_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
@@ -236,14 +237,33 @@ def _pair_metrics(scores: torch.Tensor, source_labels: np.ndarray, dataset_name:
     return rows
 
 
-def _save_loss_curve(losses: list[float], path: Path) -> None:
+def _save_loss_curve(losses: list[dict[str, float]], path: Path) -> None:
     figure, axis = plt.subplots(figsize=(7, 4))
-    axis.plot(np.arange(1, len(losses) + 1), losses)
-    axis.set(xlabel="epoch", ylabel="validation MSE", title="MLP distillation loss")
+    epochs = [item["epoch"] for item in losses]
+    axis.plot(epochs, [item["train_loss"] for item in losses], label="train")
+    axis.plot(epochs, [item["validation_loss"] for item in losses], label="validation")
+    axis.set(xlabel="epoch", ylabel="MSE", title="MLP distillation loss")
+    axis.legend()
     axis.grid(alpha=0.25)
     figure.tight_layout()
     figure.savefig(path, dpi=150)
     plt.close(figure)
+
+
+def _git_commit() -> str:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=PROJECT_ROOT, text=True, stderr=subprocess.DEVNULL
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+
+
+def _save_losses(losses: list[dict[str, float]], path: Path) -> None:
+    with path.open("w", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=["epoch", "train_loss", "validation_loss"])
+        writer.writeheader()
+        writer.writerows(losses)
 
 
 def _write_predictions(path: Path, dataset, binary_labels: torch.Tensor, pseudo_labels: torch.Tensor,
@@ -320,7 +340,7 @@ def main(cfg: DictConfig) -> None:
         score_target = scores.to(device)
 
     model = None
-    losses: list[float] = []
+    losses: list[dict[str, float]] = []
     predictions = None
     if bool(cfg.distill_mlp):
         model, losses, predictions = _train_mlp(working_embeddings, score_target, cfg.mlp, cfg.training, device)
@@ -351,6 +371,9 @@ def main(cfg: DictConfig) -> None:
             json.dumps({str(key): value for key, value in dataset.label_metadata.items()}, indent=2)
         )
         mlflow.log_params(_flatten_params(cfg))
+        commit = _git_commit()
+        mlflow.set_tag("git_commit", commit)
+        mlflow.log_param("git_commit", commit)
         with mlflow.start_run(run_name="hyperparams", nested=True):
             mlflow.log_params(_flatten_params(cfg))
             with mlflow.start_run(run_name=str(cfg.modality), nested=True):
@@ -372,6 +395,7 @@ def main(cfg: DictConfig) -> None:
             writer.writerows(rows)
         if losses:
             _save_loss_curve(losses, run_dir / "loss_curve.png")
+            _save_losses(losses, run_dir / "losses.csv")
             torch.save(model.state_dict(), run_dir / "model.pt")
         mlflow.log_artifacts(str(run_dir))
         mlflow.log_metric("n_samples", len(dataset))
