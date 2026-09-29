@@ -11,6 +11,9 @@ defaults:
 hydra:
   run:
     dir: ${hydra:runtime.cwd}
+  sweep:
+    dir: ${hydra:runtime.cwd}
+    subdir: ""
   output_subdir: null
   job:
     chdir: false

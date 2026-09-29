@@ -308,7 +308,9 @@ def _write_predictions(path: Path, dataset, binary_labels: torch.Tensor, pseudo_
 @hydra.main(version_base=None, config_path="../configs", config_name="few_shot")
 def main(cfg: DictConfig) -> None:
     cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=True))
-    logger.info("Starting few-shot pipeline: modality=%s method=%s split=%s", cfg.modality.modality, HydraConfig.get().runtime.choices["method"], cfg.modality.split)
+    hydra_config = HydraConfig.get()
+    override_text = ", ".join(hydra_config.overrides.task)
+    logger.info("Starting few-shot pipeline: modality=%s method=%s split=%s overrides=[%s]", cfg.modality.modality, hydra_config.runtime.choices["method"], cfg.modality.split, override_text)
 
     try:
         import mlflow

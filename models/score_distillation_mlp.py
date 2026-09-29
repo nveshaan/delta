@@ -11,18 +11,21 @@ class VanillaNetwork(nn.Module):
 
     def __init__(
         self,
-        in_dim: int = 768,
+        in_dim: int | None = None,
         hidden: int = 512,
         dropout: float = 0.2,
     ) -> None:
         super().__init__()
-        if in_dim <= 0 or hidden <= 1:
-            raise ValueError("in_dim must be positive and hidden must be greater than 1")
+        if (in_dim is not None and in_dim <= 0) or hidden <= 1:
+            raise ValueError("in_dim must be positive when specified and hidden must be greater than 1")
         if not 0.0 <= dropout < 1.0:
             raise ValueError("dropout must be in [0, 1)")
 
         self.net = nn.Sequential(
-            nn.Linear(in_dim, hidden),
+            # LazyLinear allows the same Hydra target to support encoders with
+            # different embedding dimensions. The layer initializes on the
+            # first full-batch forward pass.
+            nn.LazyLinear(hidden) if in_dim is None else nn.Linear(in_dim, hidden),
             nn.BatchNorm1d(hidden),
             nn.GELU(),
             nn.Dropout(dropout),
