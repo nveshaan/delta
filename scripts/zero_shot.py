@@ -120,7 +120,8 @@ def _find_checkpoint(mlflow, cfg: DictConfig, method_name: str, modality: str) -
         f"and params.modality = '{modality}' "
         f"and params.encoder = '{cfg.encoder}' "
         f"and params.method = '{method_name}' "
-        f"and params.support_size = '{int(cfg.support_size)}'"
+        f"and params.support_size = '{int(cfg.support_size)}' "
+        f"and params.mlp_targets = '{cfg.mlp_targets}'"
     )
     runs = mlflow.search_runs(
         experiment_names=[str(cfg.mlflow.experiment_name)],
@@ -166,6 +167,7 @@ def _log_metric_runs(
     method: str,
     encoder: str,
     support_size: int,
+    mlp_targets: str,
     run_type: str,
     mode: str,
     artifact_run_id: str,
@@ -178,6 +180,7 @@ def _log_metric_runs(
                 "method": method,
                 "encoder": encoder,
                 "support_size": support_size,
+                "mlp_targets": mlp_targets,
                 "type": run_type,
                 "comparison": str(row["comparison"]),
                 "mode": mode,
@@ -264,6 +267,7 @@ def main(cfg: DictConfig) -> None:
         method=method_name,
         encoder=str(cfg.encoder),
         support_size=int(cfg.support_size),
+        mlp_targets=str(cfg.mlp_targets),
         run_type=str(cfg.mlflow.type),
         mode=str(cfg.method.get("mode") or "none"),
         artifact_run_id=artifact_run_id,

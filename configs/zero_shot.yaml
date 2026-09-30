@@ -18,6 +18,7 @@ hydra:
 encoder: CLIP
 split: test
 support_size: 5
+mlp_targets: scores
 seed: 42
 device: auto
 

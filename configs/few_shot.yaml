@@ -20,9 +20,8 @@ split: train
 support_size: 5
 seed: 42
 
-# If false, the MLP target is trained directly against the binary
-# pseudolabels. If true, scores come from MSDE + GDE before distillation.
-apply_msde_gde: true
+# MLP distillation target: labels, scores, or label_scores.
+mlp_targets: scores
 distill_mlp: true
 
 msde:
@@ -35,7 +34,6 @@ msde:
   use_chunking: true
   weight_chunk_size: 2048
   enable_gradients: false
-  label_aware_joint_shift: false
 
 mlp:
   _target_: models.VanillaNetwork

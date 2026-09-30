@@ -113,7 +113,7 @@ uv run python scripts/few_shot.py \
 uv run python scripts/few_shot.py \
     modality=chest \
     method=fuse \
-    apply_msde_gde=false
+    mlp_targets=labels
 ```
 
 Method-specific ablations stay in the method configs. For example, FUSE modes
