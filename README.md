@@ -6,7 +6,7 @@
 git clone https://github.com/nveshaan/delta.git
 cd delta
 uv sync
-uv run python scripts/patch_mlflow_ui.py
+uv run python utils/patch_mlflow_ui.py
 ```
 
 ## Data
