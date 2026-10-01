@@ -246,8 +246,14 @@ def plot_scores(scores: pd.DataFrame, output_stem: Path = DEFAULT_OUTPUT_STEM) -
         axis.set_visible(False)
     for axis in axes[:ncols]:
         axis.set_xlabel("Mean composite score")
-    for axis in axes[::ncols]:
-        axis.set_ylabel("Composite score standard deviation")
+    fig.text(
+        0.015,
+        0.5,
+        "Composite score standard deviation",
+        rotation="vertical",
+        va="center",
+        ha="center",
+    )
 
     encoder_handles = [
         Line2D([0], [0], marker="o", color="none", markerfacecolor=encoder_colors[name],
@@ -268,7 +274,7 @@ def plot_scores(scores: pd.DataFrame, output_stem: Path = DEFAULT_OUTPUT_STEM) -
         handletextpad=0.5,
     )
     fig.suptitle("Zero-shot encoder × method performance and consistency", y=1.01)
-    fig.tight_layout(rect=(0, 0.08, 1, 0.98), pad=1.2)
+    fig.tight_layout(rect=(0.04, 0.08, 1, 0.98), pad=1.2)
 
     output_stem.parent.mkdir(parents=True, exist_ok=True)
     outputs = [output_stem.with_suffix(".png"), output_stem.with_suffix(".pdf")]
