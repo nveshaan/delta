@@ -157,6 +157,28 @@ def _automatic_cap(
     return selections
 
 
+def _test_cap_indices(
+    loaded: list[tuple[str, "SingleEmbedsDataset"]], seed: int, max_total_size: int
+) -> dict[str, np.ndarray]:
+    """Keep all test samples up to one global maximum, without balancing."""
+    total_size = sum(len(dataset) for _, dataset in loaded)
+    if total_size <= max_total_size:
+        return {
+            dataset_name: np.arange(len(dataset), dtype=np.int64)
+            for dataset_name, dataset in loaded
+        }
+
+    rng = np.random.RandomState(seed)
+    selected_global = np.sort(rng.permutation(total_size)[:max_total_size])
+    selections: dict[str, np.ndarray] = {}
+    offset = 0
+    for dataset_name, dataset in loaded:
+        local_mask = (selected_global >= offset) & (selected_global < offset + len(dataset))
+        selections[dataset_name] = selected_global[local_mask] - offset
+        offset += len(dataset)
+    return selections
+
+
 class SingleEmbedsDataset(Dataset):
     """PyTorch Dataset for a single dataset folder's pre-computed embeddings and labels."""
 
@@ -346,10 +368,17 @@ class ModalityEmbedsDataset(Dataset):
             if len(sub_ds) > 0:
                 loaded.append((dataset_name, sub_ds))
 
-        selections = _automatic_cap(loaded, self.seed, self.max_dataset_size) if self.cap_enabled else {
-            dataset_name: np.arange(len(sub_ds), dtype=np.int64)
-            for dataset_name, sub_ds in loaded
-        }
+        if self.cap_enabled and split_filter == "test":
+            # Test evaluation only has a global size limit. Unlike training,
+            # test datasets and labels do not need equal contributions.
+            selections = _test_cap_indices(loaded, self.seed, self.max_dataset_size)
+        elif self.cap_enabled:
+            selections = _automatic_cap(loaded, self.seed, self.max_dataset_size)
+        else:
+            selections = {
+                dataset_name: np.arange(len(sub_ds), dtype=np.int64)
+                for dataset_name, sub_ds in loaded
+            }
 
         for dataset_name, sub_ds in loaded:
             selected_indices = selections[dataset_name]
