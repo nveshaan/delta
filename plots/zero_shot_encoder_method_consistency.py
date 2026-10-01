@@ -156,22 +156,33 @@ def aggregate_scores(runs: pd.DataFrame) -> pd.DataFrame:
         modality_group, as_index=False, dropna=False
     )["composite"].mean()
 
-    # Equal weight for every modality in the final mean. The population
-    # standard deviation describes observed cross-modality consistency.
+    # Equal weight for every modality in each support-size mean. The
+    # population standard deviation describes observed cross-modality
+    # consistency.
     pair_group = ["encoder", "method", "support_size"]
     final = modality_scores.groupby(pair_group, as_index=False, dropna=False)["composite"].agg(
         mean="mean", std=lambda values: float(np.std(values.to_numpy(), ddof=0)), n_modalities="count"
     )
+
+    # For the all-support-size row, first average each modality across
+    # support sizes, then recompute the cross-modality statistics. Averaging
+    # support-size standard deviations would not produce a pooled statistic.
+    overall_modality_scores = modality_scores.groupby(
+        ["encoder", "method", "modality"], as_index=False, dropna=False
+    )["composite"].mean()
+    overall = overall_modality_scores.groupby(
+        ["encoder", "method"], as_index=False, dropna=False
+    )["composite"].agg(
+        mean="mean", std=lambda values: float(np.std(values.to_numpy(), ddof=0)), n_modalities="count"
+    )
+    overall["support_size"] = "all"
+    final = pd.concat([final, overall], ignore_index=True)
     return final.sort_values(pair_group).reset_index(drop=True)
 
 
 def add_all_support_size_scores(scores: pd.DataFrame) -> pd.DataFrame:
-    """Append the encoder/method averages across all support sizes."""
-    overall = scores.groupby(["encoder", "method"], as_index=False)[["mean", "std"]].mean()
-    overall["support_size"] = "all"
-    result = scores.copy()
-    result["support_size"] = result["support_size"].astype(str)
-    return pd.concat([result, overall], ignore_index=True)
+    """Return scores, including the all-support-size rows from aggregation."""
+    return scores.copy()
 
 
 def _apply_publication_style() -> None:
