@@ -1165,6 +1165,7 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
         learn_soft_topk_temperature=False,
         X=None,
         labels=None,
+        label_mode="same_label",
     ):
         """
         smooth_movement_gate : legacy control for the original sparse path.
@@ -1209,6 +1210,14 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
             Can also be set or changed later via
             set_reference_manifold(X_ref_or_None, labels=...) without
             passing X here.
+        label_mode : "same_label" (default) or "zero_label". How labels
+            passed to forward() restrict neighbour search (in X itself,
+            or in the reference manifold if one is set):
+            - "same_label": a point's neighbours must share its label.
+            - "zero_label": a point's neighbours must have label 0,
+              whatever its own label -- points labelled 1, 2, 3, ... are
+              shifted towards the label-0 points, and label-0 points shift
+              among themselves (or towards label-0 reference points).
         """
         super().__init__()
 
@@ -1242,6 +1251,10 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
                 "positive int N (recompute the neighbour graph every N "
                 "iterations, i.e. at iter_count 0, N, 2N, ...)."
             )
+        if label_mode not in {"same_label", "zero_label"}:
+            raise ValueError(
+                f"label_mode must be 'same_label' or 'zero_label'; got {label_mode!r}"
+            )
         self.k = k
         self.nbd_sample_count_threshold = nbd_sample_count_threshold
         self.max_iters_shift = max_iters_shift
@@ -1265,6 +1278,7 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
         # Normalize None -> 0 so the forward()-loop guard can treat both as
         # "falsy => never recompute after the first iteration" uniformly.
         self.recompute_neighbors = recompute_neighbors or 0
+        self.label_mode = label_mode
 
         # Resolved once per instance (device doesn't change afterward), not
         # per forward() call: whether to use the sparse-spmm barycenter path
@@ -1347,6 +1361,18 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
         else:
             self._buffers.pop("_ref_labels", None)
             self.register_buffer("_ref_labels", None)
+
+    def _query_labels(self, labels):
+        """
+        Labels the query side of the neighbour mask compares against the
+        corpus labels: a point may only reach corpus points whose label
+        equals its entry here. "same_label" uses each point's own label;
+        "zero_label" uses 0 for every point, so all of them can only
+        reach label-0 points.
+        """
+        if self.label_mode == "same_label":
+            return labels
+        return torch.zeros_like(labels)
 
     def set_reference_manifold(self, X, labels=None):
         """
@@ -1502,6 +1528,7 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
                     f"labels must be 1D with length matching X (n={X.shape[0]}); "
                     f"got shape {tuple(labels.shape)}"
                 )
+            query_labels = self._query_labels(labels)
 
         # A single temperature controls every smooth relaxation.
         count_temperature = self.temperature
@@ -1543,7 +1570,7 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
                 self.alpha,
                 gate,
                 knn_temperature,
-                labels=labels if masked else None,
+                labels=query_labels if masked else None,
                 corpus_labels=corpus_labels if masked else None,
                 reference_mode=reference_mode,
                 clipping=self.clipping,
@@ -1576,7 +1603,9 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
             Class labels for this call's X. When given, neighbour search
             is restricted per-class -- each point can only be shifted
             towards same-class neighbours (found in self.X_ref if a
-            reference manifold is set, otherwise in X itself).
+            reference manifold is set, otherwise in X itself). With
+            label_mode="zero_label", every point can instead only be
+            shifted towards label-0 neighbours.
             - Self-shift mode: pass labels here only; per-point classes
               are compared against each other within X.
             - Reference-shift mode: if the reference manifold has labels
@@ -1587,9 +1616,9 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
               mask per-class as usual. If the reference manifold does NOT
               have labels, passing labels here is an error: there is
               nothing on the reference side to mask against.
-            A point with fewer than k same-class neighbours available
+            A point with fewer than k valid neighbours available
             simply gets fewer effective neighbours (the rest contribute
-            zero weight); a point with *no* same-class neighbours at all
+            zero weight); a point with *no* valid neighbours at all
             is left unmoved for that call (no valid direction to shift
             it in) rather than shifted towards a meaningless barycenter.
         """
@@ -1632,6 +1661,7 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
                     f"labels must be 1D with length matching X (n={X.shape[0]}); "
                     f"got shape {tuple(labels.shape)}"
                 )
+            query_labels = self._query_labels(labels)
 
         n_samples = X.shape[0]
         shifted_dataset = X.clone()
@@ -1644,7 +1674,7 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
 
         indices_fixed = None
         w_or_W = None
-        orphan_mask = None    # (n,) bool -- points with zero same-class neighbours this recompute
+        orphan_mask = None    # (n,) bool -- points with zero valid neighbours this recompute
 
         corpus_size = self.X_ref.shape[0] if reference_mode else n_samples
         corpus_labels = ref_labels if reference_mode else labels   # self mode: corpus IS X, so its labels are `labels`
@@ -1658,9 +1688,11 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
                 with torch.no_grad():
                     knn_kwargs = {}
                     if masked:
-                        knn_kwargs["labels"] = labels
-                        if reference_mode:
-                            knn_kwargs["corpus_labels"] = corpus_labels
+                        # corpus_labels is always explicit: with
+                        # label_mode="zero_label" the query labels differ
+                        # from X's own labels even in self-shift mode.
+                        knn_kwargs["labels"] = query_labels
+                        knn_kwargs["corpus_labels"] = corpus_labels
 
                     indices_fixed_i64 = compute_fixed_knn(
                         shifted_dataset.detach(), self.k, device=self.device_name,
@@ -1678,7 +1710,7 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
                     w = w * soft_topk_w
 
                 if masked:
-                    valid = corpus_labels[indices_fixed_i64] == labels.unsqueeze(1)   # (n, k) bool
+                    valid = corpus_labels[indices_fixed_i64] == query_labels.unsqueeze(1)   # (n, k) bool
                     w = w * valid
                     has_any_valid = valid.any(dim=1)                          # (n,)
                     orphan_mask = ~has_any_valid
