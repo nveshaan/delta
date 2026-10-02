@@ -6,8 +6,11 @@ kept separate: each dataset uses ``pooled_nonzero`` when subtype comparisons
 exist and ``label_0_vs_1`` otherwise. AUROC, AUPRC, and precision-at-n are
 averaged over runs to form the dataset composite. Dataset composites are then
 averaged within each modality. For every encoder, method, support size, and
-modality, the ``labels`` score is subtracted from the ``scores`` and
-``label_scores`` scores. Because the comparison is paired within a modality,
+modality, the ``labels`` score is subtracted from each MSDE + GDE ``scores``
+variant, one per ``msde_mode`` (``no_msde``, ``msde``, ``same_label``,
+``zero_label``). Runs logged before ``msde_mode`` existed are mapped onto it:
+``scores`` -> ``msde`` and ``label_scores`` -> ``same_label``. Modes without
+runs are skipped. Because the comparison is paired within a modality,
 differences in difficulty between modalities cancel out. Only the effect of the
 target remains.
 
@@ -42,7 +45,7 @@ from zero_shot_encoder_method_consistency import (
     PROJECT_ROOT,
     _apply_publication_style,
     _choose_dataset_comparisons,
-    load_zero_shot_runs,
+    _normalise_tracking_uri,
 )
 
 
@@ -50,13 +53,79 @@ DEFAULT_OUTPUT_STEM = PROJECT_ROOT / "assets" / "zero_shot_mlp_targets_delta"
 ENCODERS = ("MedImageInsight", "MedSigLIP")
 METHODS = ("laplacianshot", "laplacianshot_msde")
 BASELINE_TARGET = "labels"
-COMPARED_TARGETS = ("scores", "label_scores")
-TARGET_COLORS = {"scores": PALETTE["red_strong"], "label_scores": PALETTE["teal"]}
-# Horizontal offset, in support-size units, so the two targets do not overlap.
-DODGE = {"scores": -0.6, "label_scores": 0.6}
+# MSDE + GDE score variants, keyed by msde_mode.
+COMPARED_TARGETS = ("no_msde", "msde", "same_label", "zero_label")
+TARGET_COLORS = {
+    "no_msde": PALETTE["blue_secondary"],
+    "msde": PALETTE["red_strong"],
+    "same_label": PALETTE["teal"],
+    "zero_label": PALETTE["violet"],
+}
+# Horizontal offset, in support-size units, so the targets do not overlap.
+DODGE = {"no_msde": -0.9, "msde": -0.3, "same_label": 0.3, "zero_label": 0.9}
+# Runs logged before msde_mode existed encode it in mlp_targets alone.
+LEGACY_TARGETS = {"labels": "labels", "scores": "msde", "label_scores": "same_label"}
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 LOGGER = logging.getLogger(__name__)
+
+
+def load_runs_by_target(
+    *, tracking_uri: str = DEFAULT_TRACKING_URI, experiment_name: str = "delta"
+) -> pd.DataFrame:
+    """Query finished zero-shot metric runs, keyed by ``labels`` or their ``msde_mode``.
+
+    The ``mlp_targets`` column holds ``labels`` for pseudolabel targets and the
+    ``msde_mode`` for MSDE + GDE score targets, so the rest of the script can
+    compare them as plain targets.
+    """
+    try:
+        import mlflow
+    except ImportError as error:  # pragma: no cover - depends on environment
+        raise RuntimeError("MLflow is required to query the experiment runs") from error
+
+    mlflow.set_tracking_uri(_normalise_tracking_uri(tracking_uri))
+    runs = mlflow.search_runs(
+        experiment_names=[experiment_name],
+        filter_string="params.type = 'zero_shot' and attributes.status = 'FINISHED'",
+        output_format="pandas",
+    )
+    if runs.empty:
+        raise ValueError(f"No finished zero-shot runs found in MLflow experiment {experiment_name!r}")
+
+    msde_mode = runs["params.msde_mode"] if "params.msde_mode" in runs else pd.Series(None, index=runs.index)
+    legacy = runs["params.mlp_targets"].map(LEGACY_TARGETS)
+    new = runs["params.mlp_targets"].where(runs["params.mlp_targets"] == "labels", msde_mode)
+    runs["params.mlp_targets"] = new.where(msde_mode.notna(), legacy)
+
+    renamed = runs.rename(
+        columns={
+            "params.encoder": "encoder",
+            "params.method": "method",
+            "params.modality": "modality",
+            "params.dataset": "dataset",
+            "params.comparison": "comparison",
+            "params.support_size": "support_size",
+            "params.mlp_targets": "mlp_targets",
+            "metrics.auroc": "auroc",
+            "metrics.auprc": "auprc",
+            "metrics.p_at_n": "p_at_n",
+        }
+    )
+    required = [*GROUP_COLUMNS, "mlp_targets", *METRICS]
+    missing = [column for column in required if column not in renamed]
+    if missing:
+        raise ValueError(f"MLflow runs are missing required columns: {', '.join(missing)}")
+
+    selected = renamed[required].copy()
+    selected["support_size"] = pd.to_numeric(selected["support_size"], errors="coerce")
+    for metric in METRICS:
+        selected[metric] = pd.to_numeric(selected[metric], errors="coerce")
+    selected = selected.dropna(subset=required)
+    selected["support_size"] = selected["support_size"].astype(int)
+    if selected.empty:
+        raise ValueError("Finished zero-shot runs contain no complete metric rows")
+    return selected
 
 
 def modality_scores(runs: pd.DataFrame) -> pd.DataFrame:
@@ -83,15 +152,17 @@ def paired_differences(runs: pd.DataFrame) -> pd.DataFrame:
         columns="mlp_targets",
         values="composite",
     )
-    missing = [target for target in (BASELINE_TARGET, *COMPARED_TARGETS) if target not in scores]
-    if missing:
-        raise ValueError(f"Runs are missing mlp_targets: {', '.join(missing)}")
-    differences = scores[list(COMPARED_TARGETS)].sub(scores[BASELINE_TARGET], axis=0)
-    return differences.dropna().reset_index().melt(
+    if BASELINE_TARGET not in scores:
+        raise ValueError(f"Runs are missing the {BASELINE_TARGET!r} baseline")
+    present = [target for target in COMPARED_TARGETS if target in scores]
+    if not present:
+        raise ValueError(f"Runs have none of the compared targets: {', '.join(COMPARED_TARGETS)}")
+    differences = scores[present].sub(scores[BASELINE_TARGET], axis=0)
+    return differences.reset_index().melt(
         id_vars=["encoder", "method", "support_size", "modality"],
         var_name="mlp_targets",
         value_name="delta",
-    )
+    ).dropna(subset=["delta"])
 
 
 def plot_differences(differences: pd.DataFrame, output_stem: Path = DEFAULT_OUTPUT_STEM) -> list[Path]:
@@ -108,6 +179,7 @@ def plot_differences(differences: pd.DataFrame, output_stem: Path = DEFAULT_OUTP
     )
     fig.get_layout_engine().set(w_pad=0.15, h_pad=0.15, hspace=0.12, wspace=0.12)
     support_sizes = sorted(differences["support_size"].unique())
+    targets = [target for target in COMPARED_TARGETS if target in set(differences["mlp_targets"])]
     # Circles are reserved for the mean lines, so modalities use the other markers.
     modalities = sorted(differences["modality"].unique())
     modality_markers = {modality: MARKERS[1 + index % (len(MARKERS) - 1)] for index, modality in enumerate(modalities)}
@@ -117,7 +189,7 @@ def plot_differences(differences: pd.DataFrame, output_stem: Path = DEFAULT_OUTP
             axis = axes[row, col]
             panel = differences[(differences["encoder"] == encoder) & (differences["method"] == method)]
             axis.axhline(0.0, color="#333333", linewidth=1.2, linestyle="--", zorder=1)
-            for target in COMPARED_TARGETS:
+            for target in targets:
                 series = panel[panel["mlp_targets"] == target]
                 for modality, points in series.groupby("modality"):
                     axis.scatter(
@@ -151,9 +223,9 @@ def plot_differences(differences: pd.DataFrame, output_stem: Path = DEFAULT_OUTP
     fig.supylabel(f"Δ composite vs {BASELINE_TARGET}", fontsize=plt.rcParams["axes.labelsize"])
 
     target_handles = [
-        Line2D([0], [0], linewidth=2.0, markersize=7, markeredgecolor="white", label=f"{target} (mean)",
+        Line2D([0], [0], linewidth=2.0, markersize=7, markeredgecolor="white", label=f"scores · {target} (mean)",
                color=TARGET_COLORS[target], marker="o")
-        for target in COMPARED_TARGETS
+        for target in targets
     ]
     modality_handles = [
         Line2D([0], [0], marker=modality_markers[modality], color="#777777", alpha=0.7, linestyle="None",
@@ -187,7 +259,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    runs = load_zero_shot_runs(tracking_uri=args.tracking_uri, experiment_name=args.experiment_name)
+    runs = load_runs_by_target(tracking_uri=args.tracking_uri, experiment_name=args.experiment_name)
     differences = paired_differences(runs)
     outputs = plot_differences(differences, output_stem=args.output_stem)
     LOGGER.info("Computed %d paired modality differences", len(differences))

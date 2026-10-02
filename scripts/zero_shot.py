@@ -114,14 +114,38 @@ def _safe_mlflow_key(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_. /:-]", "_", value)
 
 
+def _msde_mode(cfg: DictConfig) -> str:
+    """The few-shot msde.mode to match; few_shot logs "none" for mlp_targets=labels."""
+    return str(cfg.msde_mode) if str(cfg.mlp_targets) == "scores" else "none"
+
+
+# Few-shot runs logged before msde_mode existed encode the MSDE mode in
+# mlp_targets alone; map them onto the current (mlp_targets, msde_mode) pair.
+_LEGACY_TARGETS = {
+    "labels": ("labels", "none"),
+    "scores": ("scores", "msde"),
+    "label_scores": ("scores", "same_label"),
+}
+
+
+def _run_targets(run) -> tuple[str, str]:
+    """Return a few-shot run's (mlp_targets, msde_mode), resolving legacy runs."""
+    mlp_targets = str(run["params.mlp_targets"])
+    msde_mode = run.get("params.msde_mode")
+    if isinstance(msde_mode, str):
+        return mlp_targets, msde_mode
+    return _LEGACY_TARGETS.get(mlp_targets, (mlp_targets, "none"))
+
+
 def _find_checkpoint(mlflow, cfg: DictConfig, method_name: str, modality: str) -> tuple[str, str]:
+    # mlp_targets/msde_mode are matched below rather than in the filter so that
+    # legacy runs (no msde_mode param, mlp_targets=label_scores) are found too.
     filter_string = (
         "params.type = 'few_shot' "
         f"and params.modality = '{modality}' "
         f"and params.encoder = '{cfg.encoder}' "
         f"and params.method = '{method_name}' "
-        f"and params.support_size = '{int(cfg.support_size)}' "
-        f"and params.mlp_targets = '{cfg.mlp_targets}'"
+        f"and params.support_size = '{int(cfg.support_size)}'"
     )
     runs = mlflow.search_runs(
         experiment_names=[str(cfg.mlflow.experiment_name)],
@@ -129,11 +153,15 @@ def _find_checkpoint(mlflow, cfg: DictConfig, method_name: str, modality: str) -
         order_by=["start_time DESC"],
         output_format="pandas",
     )
+    wanted = (str(cfg.mlp_targets), _msde_mode(cfg))
+    if not runs.empty:
+        runs = runs[[_run_targets(run) == wanted for _, run in runs.iterrows()]]
     if runs.empty:
         raise FileNotFoundError(
             "No matching few-shot checkpoint found for "
             f"type=few_shot modality={modality} encoder={cfg.encoder} "
-            f"method={method_name} support_size={cfg.support_size}"
+            f"method={method_name} support_size={cfg.support_size} "
+            f"mlp_targets={cfg.mlp_targets} msde_mode={_msde_mode(cfg)}"
         )
     artifact_run_id = str(runs.iloc[0]["params.run_id"])
     checkpoint = mlflow.artifacts.download_artifacts(run_id=artifact_run_id, artifact_path="model.pt")
@@ -168,6 +196,7 @@ def _log_metric_runs(
     encoder: str,
     support_size: int,
     mlp_targets: str,
+    msde_mode: str,
     run_type: str,
     mode: str,
     artifact_run_id: str,
@@ -181,6 +210,7 @@ def _log_metric_runs(
                 "encoder": encoder,
                 "support_size": support_size,
                 "mlp_targets": mlp_targets,
+                "msde_mode": msde_mode,
                 "type": run_type,
                 "comparison": str(row["comparison"]),
                 "mode": mode,
@@ -268,6 +298,7 @@ def main(cfg: DictConfig) -> None:
         encoder=str(cfg.encoder),
         support_size=int(cfg.support_size),
         mlp_targets=str(cfg.mlp_targets),
+        msde_mode=_msde_mode(cfg),
         run_type=str(cfg.mlflow.type),
         mode=str(cfg.method.get("mode") or "none"),
         artifact_run_id=artifact_run_id,

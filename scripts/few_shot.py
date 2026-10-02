@@ -154,20 +154,32 @@ class GDEScorer:
         return torch.from_numpy(np.sqrt(np.clip(scores, 0, None)).astype(np.float32))
 
 
+MSDE_MODES = ("no_msde", "msde", "same_label", "zero_label")
+
+
 def _run_msde_gde(
     embeddings: torch.Tensor,
     binary_labels: torch.Tensor,
     cfg: DictConfig,
-    *,
-    label_aware: bool,
 ) -> torch.Tensor:
-    """Shift normals, fit GDE, then shift and score the complete dataset."""
+    """Shift normals, fit GDE, then shift and score the complete dataset.
+
+    ``cfg.mode`` selects the shift: ``no_msde`` fits and scores the raw
+    embeddings, ``msde`` shifts without labels, and ``same_label`` /
+    ``zero_label`` pass the binary labels to the joint shift with that MSDE
+    ``label_mode``.
+    """
     device_name = _resolve_device(str(cfg.device))
     values = embeddings.to(device=device_name, dtype=torch.float32)
     normal_embeddings = values[binary_labels.to(device=device_name) == 0]
     if len(normal_embeddings) < 2:
         raise ValueError("MSDE + GDE requires at least two normal samples")
     msde_kwargs = OmegaConf.to_container(cfg, resolve=True)
+    mode = msde_kwargs.pop("mode")
+    if mode == "no_msde":
+        return GDEScorer().fit(normal_embeddings).score(values)
+    if mode in {"same_label", "zero_label"}:
+        msde_kwargs["label_mode"] = mode
     msde_kwargs["device"] = device_name
     msde_kwargs["k"] = min(int(msde_kwargs["k"]), len(values) - 1)
     normal_msde = MeanShiftDensityEnhancement(**msde_kwargs)
@@ -175,7 +187,7 @@ def _run_msde_gde(
     gde = GDEScorer().fit(shifted_normals)
 
     joint_msde = MeanShiftDensityEnhancement(**msde_kwargs)
-    joint_labels = binary_labels.to(device=device_name) if label_aware else None
+    joint_labels = binary_labels.to(device=device_name) if mode != "msde" else None
     shifted_all, _, _ = joint_msde(values, labels=joint_labels)
     return gde.score(shifted_all)
 
@@ -290,6 +302,7 @@ def _log_metric_runs(
     encoder: str,
     support_size: int,
     mlp_targets: str,
+    msde_mode: str,
     run_type: str,
     mode: str,
     artifact_run_id: str,
@@ -303,6 +316,7 @@ def _log_metric_runs(
                 "encoder": encoder,
                 "support_size": support_size,
                 "mlp_targets": mlp_targets,
+                "msde_mode": msde_mode,
                 "type": run_type,
                 "comparison": str(row["comparison"]),
                 "mode": mode,
@@ -397,19 +411,20 @@ def _execute(cfg: DictConfig) -> None:
     full_confidence[query_indices.to(device)] = confidence
 
     mlp_targets = str(cfg.mlp_targets)
-    if mlp_targets not in {"labels", "scores", "label_scores"}:
-        raise ValueError("mlp_targets must be one of: labels, scores, label_scores")
+    if mlp_targets not in {"labels", "scores"}:
+        raise ValueError(
+            "mlp_targets must be one of: labels, scores "
+            "(label_scores is now mlp_targets=scores msde.mode=same_label)"
+        )
+    msde_mode = str(cfg.msde.mode) if mlp_targets == "scores" else "none"
+    if mlp_targets == "scores" and msde_mode not in MSDE_MODES:
+        raise ValueError(f"msde.mode must be one of: {', '.join(MSDE_MODES)}")
     if mlp_targets == "labels":
         scores = full_pseudo_labels.float().cpu()
         score_target = scores.to(device)
     else:
-        logger.info("Running MSDE + GDE scoring for mlp_targets=%s", mlp_targets)
-        scores = _run_msde_gde(
-            working_embeddings,
-            full_pseudo_labels,
-            cfg.msde,
-            label_aware=mlp_targets == "label_scores",
-        )
+        logger.info("Running MSDE + GDE scoring with msde.mode=%s", msde_mode)
+        scores = _run_msde_gde(working_embeddings, full_pseudo_labels, cfg.msde)
         score_target = scores.to(device)
 
     model = None
@@ -490,6 +505,7 @@ def _execute(cfg: DictConfig) -> None:
         encoder=encoder_name,
         support_size=int(cfg.support_size),
         mlp_targets=mlp_targets,
+        msde_mode=msde_mode,
         run_type=str(cfg.mlflow.type),
         mode=str(cfg.method.get("mode") or "none"),
         artifact_run_id=artifact_run_id,
