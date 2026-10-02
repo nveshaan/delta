@@ -116,7 +116,7 @@ def _safe_mlflow_key(value: str) -> str:
 
 def _msde_mode(cfg: DictConfig) -> str:
     """The few-shot msde.mode to match; few_shot logs "none" for mlp_targets=labels."""
-    return str(cfg.msde_mode) if str(cfg.mlp_targets) == "scores" else "none"
+    return str(cfg.msde_mode) if str(cfg.mlp_targets) != "labels" else "none"
 
 
 # Few-shot runs logged before msde_mode existed encode the MSDE mode in

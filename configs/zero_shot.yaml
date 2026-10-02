@@ -19,7 +19,8 @@ encoder: CLIP
 split: test
 support_size: 5
 mlp_targets: scores
-# few-shot msde.mode to evaluate (mlp_targets=scores): no_msde | msde | same_label | zero_label
+# mlp_targets: labels | scores | distances
+# few-shot msde.mode to evaluate (mlp_targets=scores/distances): no_msde | msde | same_label | zero_label
 msde_mode: msde
 seed: 42
 device: auto

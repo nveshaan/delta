@@ -157,6 +157,35 @@ class GDEScorer:
 MSDE_MODES = ("no_msde", "msde", "same_label", "zero_label")
 
 
+def _msde_kwargs(cfg: DictConfig, n_samples: int, device_name: str) -> tuple[str, dict[str, Any]]:
+    """Split ``cfg`` into its MSDE mode and MeanShiftDensityEnhancement kwargs."""
+    msde_kwargs = OmegaConf.to_container(cfg, resolve=True)
+    mode = msde_kwargs.pop("mode")
+    if mode in {"same_label", "zero_label"}:
+        msde_kwargs["label_mode"] = mode
+    msde_kwargs["device"] = device_name
+    msde_kwargs["k"] = min(int(msde_kwargs["k"]), n_samples - 1)
+    return mode, msde_kwargs
+
+
+def _run_msde_distances(
+    embeddings: torch.Tensor,
+    binary_labels: torch.Tensor,
+    cfg: DictConfig,
+) -> torch.Tensor:
+    """Shift the complete dataset and return MSDE's per-sample total_distance.
+
+    ``cfg.mode`` selects the shift as in ``_run_msde_gde``; ``no_msde`` has no
+    distances and is rejected before this is called.
+    """
+    device_name = _resolve_device(str(cfg.device))
+    values = embeddings.to(device=device_name, dtype=torch.float32)
+    mode, msde_kwargs = _msde_kwargs(cfg, len(values), device_name)
+    joint_labels = binary_labels.to(device=device_name) if mode != "msde" else None
+    _, total_distance, _ = MeanShiftDensityEnhancement(**msde_kwargs)(values, labels=joint_labels)
+    return total_distance.detach().float().cpu()
+
+
 def _run_msde_gde(
     embeddings: torch.Tensor,
     binary_labels: torch.Tensor,
@@ -174,14 +203,9 @@ def _run_msde_gde(
     normal_embeddings = values[binary_labels.to(device=device_name) == 0]
     if len(normal_embeddings) < 2:
         raise ValueError("MSDE + GDE requires at least two normal samples")
-    msde_kwargs = OmegaConf.to_container(cfg, resolve=True)
-    mode = msde_kwargs.pop("mode")
+    mode, msde_kwargs = _msde_kwargs(cfg, len(values), device_name)
     if mode == "no_msde":
         return GDEScorer().fit(normal_embeddings).score(values)
-    if mode in {"same_label", "zero_label"}:
-        msde_kwargs["label_mode"] = mode
-    msde_kwargs["device"] = device_name
-    msde_kwargs["k"] = min(int(msde_kwargs["k"]), len(values) - 1)
     normal_msde = MeanShiftDensityEnhancement(**msde_kwargs)
     shifted_normals, _, _ = normal_msde(normal_embeddings)
     gde = GDEScorer().fit(shifted_normals)
@@ -411,16 +435,22 @@ def _execute(cfg: DictConfig) -> None:
     full_confidence[query_indices.to(device)] = confidence
 
     mlp_targets = str(cfg.mlp_targets)
-    if mlp_targets not in {"labels", "scores"}:
+    if mlp_targets not in {"labels", "scores", "distances"}:
         raise ValueError(
-            "mlp_targets must be one of: labels, scores "
+            "mlp_targets must be one of: labels, scores, distances "
             "(label_scores is now mlp_targets=scores msde.mode=same_label)"
         )
-    msde_mode = str(cfg.msde.mode) if mlp_targets == "scores" else "none"
-    if mlp_targets == "scores" and msde_mode not in MSDE_MODES:
+    msde_mode = str(cfg.msde.mode) if mlp_targets != "labels" else "none"
+    if mlp_targets != "labels" and msde_mode not in MSDE_MODES:
         raise ValueError(f"msde.mode must be one of: {', '.join(MSDE_MODES)}")
+    if mlp_targets == "distances" and msde_mode == "no_msde":
+        raise ValueError("mlp_targets=distances needs an MSDE shift; msde.mode cannot be no_msde")
     if mlp_targets == "labels":
         scores = full_pseudo_labels.float().cpu()
+        score_target = scores.to(device)
+    elif mlp_targets == "distances":
+        logger.info("Running MSDE total-distance targets with msde.mode=%s", msde_mode)
+        scores = _run_msde_distances(working_embeddings, full_pseudo_labels, cfg.msde)
         score_target = scores.to(device)
     else:
         logger.info("Running MSDE + GDE scoring with msde.mode=%s", msde_mode)

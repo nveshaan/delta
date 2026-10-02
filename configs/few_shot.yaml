@@ -20,12 +20,14 @@ split: train
 support_size: 5
 seed: 42
 
-# MLP distillation target: labels (pseudolabels) or scores (MSDE + GDE, see msde.mode).
+# MLP distillation target: labels (pseudolabels), scores (MSDE + GDE), or
+# distances (MSDE total_distance); scores/distances use msde.mode.
 mlp_targets: scores
 distill_mlp: true
 
 msde:
-  # MSDE before GDE scoring: no_msde | msde | same_label | zero_label
+  # MSDE before GDE scoring / for distances: no_msde | msde | same_label | zero_label
+  # (distances cannot use no_msde)
   mode: msde
   k: 50
   nbd_sample_count_threshold: 70
