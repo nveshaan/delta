@@ -1,0 +1,31 @@
+# @package _global_
+# Optuna stage 1 for scripts/few_shot.py: tune the selected method's
+# pseudolabeler (configs/search_space.yaml: method.<method>). Every trial runs
+# all support_sizes x modalities and maximizes the equally weighted mean of
+# their pseudolabel objectives (query-sample AUROC). One study per
+# method x encoder; scripts/run_optuna.py --stage method wraps it:
+#
+#   uv run python scripts/few_shot.py -m +experiment=optuna_method \
+#       method=laplacianshot_msde encoder=CLIP
+defaults:
+  - override /hydra/sweeper: optuna
+
+campaign: optuna
+support_sizes: [5, 10, 20, 30, 50]
+modalities: [chest, fundus, mri, oct]
+
+hydra:
+  sweeper:
+    direction: maximize
+    study_name: ${hydra.runtime.choices.method}_${encoder}_method
+    # Relative to the repository root.
+    storage: sqlite:///experiments/optuna.db
+    n_trials: 50
+    n_jobs: 1
+    # Invalid trials are recorded as FAIL and skipped; do not abort the study.
+    # With n_jobs=1, 1.0 is required because the plugin checks the failure rate
+    # after each one-trial batch.
+    max_failure_rate: 1.0
+    sampler:
+      seed: 123
+    custom_search_space: utils.search_space.method

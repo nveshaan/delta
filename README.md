@@ -120,6 +120,7 @@ Arguments (also accepted by `distill_mlp.py`):
 | `support_sizes` | `null` | list, e.g. `support_sizes=[5,10]`; runs each and returns the mean objective |
 | `modalities` | `null` | list, e.g. `modalities=[chest,oct]`; same as above |
 | `redo` / `--redo` | `false` | delete an identical finished run and run again |
+| `+experiment=optuna_method` | | stage-1 Optuna sweep over the method's section of `configs/search_space.yaml` (use with `-m`; sets `campaign=optuna`) |
 
 ### Distillation
 
@@ -139,7 +140,7 @@ Arguments (in addition to the few-shot ones):
 | `msde.<key>` | | `k`, `nbd_sample_count_threshold`, `learning_rate`, `max_iters_shift`, `shift_threshold`, ... (ignored for `labels`) |
 | `training.<key>` | | `epochs`, `learning_rate`, `weight_decay`, `validation_fraction`, `patience` |
 | `mlp._target_` | `models.VanillaNetwork` | |
-| `+experiment=optuna` | | Optuna sweep over `configs/search_space.yaml` (use with `-m`; sets `campaign=optuna`) |
+| `+experiment=optuna_msde` | | stage-2 Optuna sweep over `msde` in `configs/search_space.yaml` (use with `-m`; sets `campaign=optuna`) |
 
 ### Zero-Shot Evaluation
 
@@ -194,19 +195,37 @@ uv run python scripts/zero_shot.py -m \
 
 ### Set 2: hyperparameter optimization of the top methods and encoders
 
+Two stages. Stage 1 tunes each method's pseudolabeler on the few-shot
+pseudolabel objective; stage 2 fixes the stage-1 best parameters (so every
+trial reuses the same cached pseudolabels) and tunes MSDE for the `scores` and
+`distances` targets. `labels` uses no MSDE, so its stage 2 is a single
+distillation with the stage-1 parameters. Every trial covers all support sizes
+and modalities. Search spaces: `configs/search_space.yaml`.
+
 ```bash
-# One Optuna study per method x encoder x mlp_targets; every trial covers all
-# support sizes and modalities. Search spaces: configs/search_space.yaml.
-# The wrapper exports the final best trial to
-# experiments/optuna_best/<method>/<encoder>/<mlp_targets>/best_params.yaml.
-for method in <method 1> <method 2>; do
-  for encoder in <encoder 1> <encoder 2>; do
+# Stage 1: one study per method x encoder (study <method>_<encoder>_method),
+# exported to experiments/optuna_best/<method>/<encoder>/method/best_params.yaml.
+for method in laplacianshot laplacianshot_msde; do
+  for encoder in MedImageInsight MedSigLIP; do
+    uv run python scripts/run_optuna.py --stage method --method "$method" --encoder "$encoder"
+  done
+done
+
+# Stage 2: one study per method x encoder x mlp_targets (study
+# <method>_<encoder>_<targets>_msde), exported to
+# experiments/optuna_best/<method>/<encoder>/<targets>/best_params.yaml.
+for method in laplacianshot laplacianshot_msde; do
+  for encoder in MedImageInsight MedSigLIP; do
     for targets in labels scores distances; do
-      uv run python scripts/run_optuna.py \
+      uv run python scripts/run_optuna.py --stage msde \
           --method "$method" --encoder "$encoder" --mlp-targets "$targets"
     done
   done
 done
+
+# Extra arguments are passed to Hydra, e.g. hydra.sweeper.n_trials=20.
+# Rerunning a stage adds n_trials more trials to its existing study (the
+# wrapper offsets the sampler seed so resumed trials are not repeats).
 
 # Zero-shot evaluation of one trial: take its tags.trial_hash from the MLflow
 # run with the highest metrics.trial_objective.

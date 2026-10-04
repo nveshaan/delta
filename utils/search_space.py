@@ -1,9 +1,9 @@
-"""Optuna search space for ``distill_mlp.py`` sweeps.
+"""Optuna search spaces for the two-stage sweep.
 
-Used as hydra-optuna-sweeper's ``custom_search_space``: every trial samples the
-selected method's pseudolabeler parameters, plus the MSDE parameters when
-``mlp_targets`` is ``scores`` or ``distances``. The ranges live in
-``configs/search_space.yaml``.
+Used as hydra-optuna-sweeper's ``custom_search_space``: ``method`` samples the
+selected method's pseudolabeler parameters (``few_shot.py``), ``msde`` samples
+the MSDE parameters of ``mlp_targets=scores/distances`` (``distill_mlp.py``).
+The ranges live in ``configs/search_space.yaml``.
 """
 
 from __future__ import annotations
@@ -15,17 +15,27 @@ from omegaconf import DictConfig, OmegaConf
 SEARCH_SPACE_FILE = Path(__file__).resolve().parents[1] / "configs" / "search_space.yaml"
 
 
-def suggest(cfg: DictConfig, trial) -> None:
-    """Sample this sweep's parameters into ``trial`` (they become job overrides)."""
+def _suggest(trial, overrides: list[str]) -> None:
+    """Sample Hydra sweep ``overrides`` into ``trial`` (they become job overrides)."""
     from hydra_plugins.hydra_optuna_sweeper._impl import create_params_from_overrides
 
-    space = OmegaConf.load(SEARCH_SPACE_FILE)
-    method = str(cfg.hydra.runtime.choices.method)
-    if method not in space.method:
-        raise ValueError(f"No search space for method {method!r} in {SEARCH_SPACE_FILE}")
-    overrides = [f"method.{key}={value}" for key, value in space.method[method].items()]
-    if str(cfg.mlp_targets) != "labels":
-        overrides += [f"msde.{key}={value}" for key, value in space.msde.items()]
     distributions, _, _ = create_params_from_overrides(overrides)
     for name, distribution in distributions.items():
         trial._suggest(name, distribution)
+
+
+def method(cfg: DictConfig, trial) -> None:
+    """Stage 1: the selected method's pseudolabeler parameters."""
+    space = OmegaConf.load(SEARCH_SPACE_FILE)
+    name = str(cfg.hydra.runtime.choices.method)
+    if name not in space.method:
+        raise ValueError(f"No search space for method {name!r} in {SEARCH_SPACE_FILE}")
+    _suggest(trial, [f"method.{key}={value}" for key, value in space.method[name].items()])
+
+
+def msde(cfg: DictConfig, trial) -> None:
+    """Stage 2: the MSDE parameters (the method's parameters are fixed overrides)."""
+    if str(cfg.mlp_targets) == "labels":
+        raise ValueError("mlp_targets=labels does not use MSDE; there is nothing to search")
+    space = OmegaConf.load(SEARCH_SPACE_FILE)
+    _suggest(trial, [f"msde.{key}={value}" for key, value in space.msde.items()])

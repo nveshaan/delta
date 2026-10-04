@@ -1,0 +1,34 @@
+# @package _global_
+# Optuna stage 2 for scripts/distill_mlp.py: tune MSDE (configs/search_space.yaml:
+# msde) for mlp_targets=scores/distances with the method's stage-1 best
+# parameters passed as fixed method.<key>=<value> overrides, so every trial
+# reuses the same cached pseudolabels. Every trial runs all support_sizes x
+# modalities and maximizes their equally weighted mean objective. One study
+# per method x encoder x mlp_targets; scripts/run_optuna.py --stage msde
+# wraps it and fills in the stage-1 parameters:
+#
+#   uv run python scripts/distill_mlp.py -m +experiment=optuna_msde \
+#       method=laplacianshot_msde encoder=CLIP mlp_targets=scores \
+#       method.laplacian_k=20 ...
+defaults:
+  - override /hydra/sweeper: optuna
+
+campaign: optuna
+support_sizes: [5, 10, 20, 30, 50]
+modalities: [chest, fundus, mri, oct]
+
+hydra:
+  sweeper:
+    direction: maximize
+    study_name: ${hydra.runtime.choices.method}_${encoder}_${mlp_targets}_msde
+    # Relative to the repository root.
+    storage: sqlite:///experiments/optuna.db
+    n_trials: 50
+    n_jobs: 1
+    # Invalid trials are recorded as FAIL and skipped; do not abort the study.
+    # With n_jobs=1, 1.0 is required because the plugin checks the failure rate
+    # after each one-trial batch.
+    max_failure_rate: 1.0
+    sampler:
+      seed: 123
+    custom_search_space: utils.search_space.msde
