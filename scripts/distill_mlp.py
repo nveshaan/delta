@@ -369,7 +369,12 @@ def _execute(cfg: DictConfig) -> tuple[float, str]:
 @hydra.main(version_base=None, config_path="../configs", config_name="distill_mlp")
 def main(cfg: DictConfig) -> float:
     """Run one Hydra job and return its objective (NaN for a failed multirun job)."""
-    return hydra_entry(cfg, _execute, "DISTILL-MLP")
+    return hydra_entry(
+        cfg,
+        _execute,
+        "DISTILL-MLP",
+        re_raise_multirun_failure=str(cfg.get("campaign", "adhoc")) == "optuna",
+    )
 
 
 if __name__ == "__main__":

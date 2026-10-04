@@ -197,11 +197,13 @@ uv run python scripts/zero_shot.py -m \
 ```bash
 # One Optuna study per method x encoder x mlp_targets; every trial covers all
 # support sizes and modalities. Search spaces: configs/search_space.yaml.
+# The wrapper exports the final best trial to
+# experiments/optuna_best/<method>/<encoder>/<mlp_targets>/best_params.yaml.
 for method in <method 1> <method 2>; do
   for encoder in <encoder 1> <encoder 2>; do
     for targets in labels scores distances; do
-      uv run python scripts/distill_mlp.py -m +experiment=optuna \
-          method=$method encoder=$encoder mlp_targets=$targets
+      uv run python scripts/run_optuna.py \
+          --method "$method" --encoder "$encoder" --mlp-targets "$targets"
     done
   done
 done

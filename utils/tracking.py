@@ -367,17 +367,25 @@ def for_each_combination(cfg: DictConfig, execute_one: Callable[[DictConfig], tu
     return balanced
 
 
-def hydra_entry(cfg: DictConfig, execute_one: Callable[[DictConfig], tuple[float, str]], job_name: str) -> float:
-    """Shared ``main`` body: return the objective, or NaN for a failed multirun job.
+def hydra_entry(
+    cfg: DictConfig,
+    execute_one: Callable[[DictConfig], tuple[float, str]],
+    job_name: str,
+    *,
+    re_raise_multirun_failure: bool = False,
+) -> float:
+    """Shared ``main`` body: execute one job and handle failures.
 
     Single runs re-raise so the process exits non-zero; multirun jobs return
-    NaN so a sweep (and Optuna, which records NaN as a failed trial) continues.
+    NaN so ordinary Hydra sweeps can continue. Optuna sweeps can request
+    re-raising: the Optuna sweeper then records the trial as ``FAIL`` rather
+    than receiving NaN, which Optuna rejects as an objective value.
     """
     try:
         objective = for_each_combination(cfg, execute_one)
     except Exception as error:
         hydra_config = HydraConfig.get()
-        if hydra_config.mode != RunMode.MULTIRUN:
+        if hydra_config.mode != RunMode.MULTIRUN or re_raise_multirun_failure:
             raise
         message = (
             f"{job_name} JOB FAILED\n"
