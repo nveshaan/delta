@@ -16,6 +16,14 @@ grid, ``optuna`` for tuned models) are aggregated in the following order:
 The figure contains one scatter panel per support size. Each point is one
 encoder/method pair; color identifies the encoder and marker identifies the
 method. PNG and PDF outputs are written to ``assets/`` by default.
+
+Usage::
+
+    # Experiment set 1 (default --campaign adhoc).
+    uv run python plots/zero_shot_encoder_method_consistency.py
+
+    # Experiment set 2.
+    uv run python plots/zero_shot_encoder_method_consistency.py --campaign optuna
 """
 
 from __future__ import annotations

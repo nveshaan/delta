@@ -18,6 +18,14 @@ markers (solid for ``scores``, dashed for ``distances``), the individual
 modality differences as small points shaped by modality, and a zero line for
 parity with ``labels``. Each panel has its own y-axis range. PNG and PDF
 outputs are written to ``assets/`` by default.
+
+Usage::
+
+    # Experiment set 1 (default --campaign adhoc).
+    uv run python plots/zero_shot_mlp_targets_delta.py
+
+    # Experiment set 2.
+    uv run python plots/zero_shot_mlp_targets_delta.py --campaign optuna --encoders <encoder 1> <encoder 2> --methods <method 1> <method 2>
 """
 
 from __future__ import annotations

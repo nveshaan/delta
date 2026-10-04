@@ -89,11 +89,37 @@ The generated files are written to
 
 ## Pipeline
 
+All three scripts are Hydra apps. Every key below can be set with `key=value`,
+and `-m` sweeps comma-separated values (`modality=chest,oct`). Use `--cfg job`
+to print the resolved config, or `--help` to list the config groups.
+
+| Argument | Default | Values |
+| --- | --- | --- |
+| `modality` | `chest` | `chest`, `fundus`, `mri`, `oct` (`configs/modality/`) |
+| `method` | `fuse` | `fuse`, `knnvote_msde`, `laplacianshot`, `laplacianshot_msde` (`configs/method/`) |
+| `encoder` | `CLIP` | `MedImageInsight`, `MedSigLIP`, `BiomedCLIP`, `UniMedCLIP`, `CLIP` |
+| `support_size` | `5` | labeled support samples per class |
+| `seed` | `42` | |
+| `device` | `auto` | `auto`, `cpu`, `cuda`, `mps` |
+| `campaign` | `adhoc` | free-form label for grouping runs (`tags.campaign`); not hashed |
+| `method.<key>` | | any key of the method's YAML, e.g. `method.confidence=0.9`, `method.mode=no_msde` |
+| `modality.<key>` | | any key of the modality's YAML, e.g. `modality.max_dataset_size=5000` |
+| `mlflow.experiment_name` | `delta` | also `mlflow.tracking_uri`, `mlflow.artifact_location`, `mlflow.run_name` |
+
 ### Few-Shot Pseudo Labels
 
 ```bash
 uv run python scripts/few_shot.py modality=chest method=laplacianshot_msde support_size=5
 ```
+
+Arguments (also accepted by `distill_mlp.py`):
+
+| Argument | Default | Values |
+| --- | --- | --- |
+| `split` | `train` | dataset split to pseudolabel |
+| `support_sizes` | `null` | list, e.g. `support_sizes=[5,10]`; runs each and returns the mean objective |
+| `modalities` | `null` | list, e.g. `modalities=[chest,oct]`; same as above |
+| `redo` / `--redo` | `false` | delete an identical finished run and run again |
 
 ### Distillation
 
@@ -103,6 +129,17 @@ uv run python scripts/distill_mlp.py modality=chest method=laplacianshot_msde su
 uv run python scripts/distill_mlp.py modality=chest method=laplacianshot_msde support_size=5 mlp_targets=scores
 uv run python scripts/distill_mlp.py modality=chest method=laplacianshot_msde support_size=5 mlp_targets=distances
 ```
+
+Arguments (in addition to the few-shot ones):
+
+| Argument | Default | Values |
+| --- | --- | --- |
+| `mlp_targets` | `scores` | `labels` (pseudolabels), `scores` (same_label MSDE + GDE), `distances` (zero_label MSDE) |
+| `distill_mlp` | `true` | `false` skips MLP training and evaluates the targets directly |
+| `msde.<key>` | | `k`, `nbd_sample_count_threshold`, `learning_rate`, `max_iters_shift`, `shift_threshold`, ... (ignored for `labels`) |
+| `training.<key>` | | `epochs`, `learning_rate`, `weight_decay`, `validation_fraction`, `patience` |
+| `mlp._target_` | `models.VanillaNetwork` | |
+| `+experiment=optuna` | | Optuna sweep over `configs/search_space.yaml` (use with `-m`; sets `campaign=optuna`) |
 
 ### Zero-Shot Evaluation
 
@@ -117,6 +154,16 @@ uv run python scripts/zero_shot.py \
 # Evaluate a specific distill_mlp run.
 uv run python scripts/zero_shot.py method=laplacianshot_msde modality=chest distill_run_id=<run id>
 ```
+
+Arguments:
+
+| Argument | Default | Values |
+| --- | --- | --- |
+| `split` | `test` | dataset split to evaluate |
+| `mlp_targets` | `scores` | `labels`, `scores`, `distances`; selects which distill_mlp run to load |
+| `distill_run_id` | `null` | evaluate this distill_mlp run; otherwise the latest finished run matching the settings |
+| `trial_hash` | `null` | restrict the search to one Optuna trial; otherwise restrict to `campaign` |
+| `mlp._target_` | `models.VanillaNetwork` | must match the distilled model |
 
 Use the MLflow UI to inspect runs:
 
@@ -165,18 +212,6 @@ uv run python scripts/zero_shot.py -m \
     method=<method> encoder=<encoder> mlp_targets=<targets> trial_hash=<trial hash> \
     modality=chest,fundus,mri,oct \
     support_size=5,10,20,30,50
-```
-
-## Plots
-
-```bash
-# Experiment set 1 (default --campaign adhoc).
-uv run python plots/zero_shot_encoder_method_consistency.py
-uv run python plots/zero_shot_mlp_targets_delta.py
-
-# Experiment set 2.
-uv run python plots/zero_shot_encoder_method_consistency.py --campaign optuna
-uv run python plots/zero_shot_mlp_targets_delta.py --campaign optuna --encoders <encoder 1> <encoder 2> --methods <method 1> <method 2>
 ```
 
 ## Acknowledgements
