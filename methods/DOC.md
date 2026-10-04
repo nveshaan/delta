@@ -64,7 +64,7 @@ Costs below count distance arithmetic and omit constant factors. Exact k-NN rema
 
 | Option | Configurations and effect | Use when / watch out |
 | --- | --- | --- |
-| `k` | Positive integer number of legacy shift neighbors. | Larger values smooth the legacy hard graph but increase its gather/graph cost. In fully differentiable mode, `k` controls the softness target of the continuous neighbor assignment rather than selecting exactly `k` hard indices. |
+| `k` | Positive integer number of legacy shift neighbors. In hard k-NN mode it must not exceed the corpus size (`n` in self-shift mode or `m` in reference-manifold mode); invalid values raise `ValueError` before the compiled `topk` kernel runs. | Larger values smooth the legacy hard graph but increase its gather/graph cost. In fully differentiable mode, `k` controls the softness target of the continuous neighbor assignment rather than selecting exactly `k` hard indices. |
 | `n_neighbors` | Not a constructor option. The legacy density graph uses `15` neighbors and `200` fuzzy-set epochs. | Use `get_empirical_weights` directly when the standalone legacy density graph must use different internal settings. |
 | `recompute_neighbors` | Legacy path: `0`/`None` builds the graph once; positive `p` rebuilds periodically. | In fully differentiable mode there is no hard neighbor topology to rebuild; each shift iteration evaluates the continuous assignment directly. |
 | `X` | `None`: self-shift; `(m,d)` tensor/array: reference-manifold mode. | In fully differentiable mode the reference can remain connected to autograd. In the legacy path it is detached and cached. |
@@ -184,6 +184,7 @@ How the mask is applied:
 - **Legacy path:** the chunked k-NN kernel sets the distance to `inf` wherever the query and corpus labels don't match, then takes `topk`. `zero_label` replaces every query label with `0` before the comparison, so the test becomes `corpus_label == 0`.
 - **Fewer than `k` eligible points:** `topk` still returns `k` indices; the ineligible extras get zero weight.
 - **No eligible points:** the point is an orphan and is left unmoved for that call (legacy path), or its step is scaled to zero by the continuous validity gate (fully differentiable path).
+- **Corpus-size constraint:** `k` is validated against the total corpus size before masking. A label mask can reduce the number of effective neighbors, but it cannot make an invalid `k` valid; `k` must still be no greater than the unmasked corpus size.
 - **Density weights are not masked:** they are computed on the full X (or full `X_ref`); only neighbor eligibility depends on labels.
 - **Self-neighbors:** in self-shift mode an eligible point is its own nearest neighbor in the legacy path. Under `zero_label` this applies only to label-0 points.
 - **Fully differentiable path:** the soft k-NN membership is multiplied by the same eligibility mask, with the target mass set to `min(eligible count, k)`.
@@ -285,6 +286,7 @@ This is the fundamental trade-off for obtaining gradients through neighbor membe
 ## Failure modes and checks
 
 - `fully_differentiable=True` requires floating-point feature tensors and uses a positive temperature.
+- Hard k-NN validates `1 <= k <= corpus_size` before calling `torch.topk`; this applies to self-shift and reference-manifold mode. In a masked run, the corpus size is still the total unmasked corpus size.
 - `k` still controls the target neighbor mass of the continuous assignment; it is not a hard limit on the number of candidates considered.
 - `learn_temperature=True` requires an initial temperature or uses the differentiable-mode default when appropriate.
 - `learn_eps=True` in fully differentiable mode requires an explicit initial `eps`.

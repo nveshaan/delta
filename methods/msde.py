@@ -114,6 +114,15 @@ def torch_knn(X, k, device=DEFAULT_DEVICE, chunk_size=8192, corpus=None, labels=
     """Compute exact chunked k-NN indices and distances."""
     X_full = corpus if corpus is not None else X
 
+    if isinstance(k, bool) or not isinstance(k, int):
+        raise TypeError(f"k must be a positive integer; got {k!r}")
+    corpus_size = X_full.shape[0]
+    if k < 1 or k > corpus_size:
+        raise ValueError(
+            f"k={k} is invalid for k-NN corpus size {corpus_size}; "
+            f"expected 1 <= k <= {corpus_size}"
+        )
+
     if labels is not None:
         if corpus is None:
             full_labels = corpus_labels if corpus_labels is not None else labels
