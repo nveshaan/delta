@@ -114,58 +114,56 @@ def _safe_mlflow_key(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_. /:-]", "_", value)
 
 
+# MSDE label_mode of each MLP target; must match distill_mlp.MSDE_MODES.
+_MSDE_MODES = {"labels": "none", "scores": "same_label", "distances": "zero_label"}
+
+
 def _msde_mode(cfg: DictConfig) -> str:
-    """The few-shot msde.mode to match; few_shot logs "none" for mlp_targets=labels."""
-    return str(cfg.msde_mode) if str(cfg.mlp_targets) != "labels" else "none"
-
-
-# Few-shot runs logged before msde_mode existed encode the MSDE mode in
-# mlp_targets alone; map them onto the current (mlp_targets, msde_mode) pair.
-_LEGACY_TARGETS = {
-    "labels": ("labels", "none"),
-    "scores": ("scores", "msde"),
-    "label_scores": ("scores", "same_label"),
-}
-
-
-def _run_targets(run) -> tuple[str, str]:
-    """Return a few-shot run's (mlp_targets, msde_mode), resolving legacy runs."""
-    mlp_targets = str(run["params.mlp_targets"])
-    msde_mode = run.get("params.msde_mode")
-    if isinstance(msde_mode, str):
-        return mlp_targets, msde_mode
-    return _LEGACY_TARGETS.get(mlp_targets, (mlp_targets, "none"))
+    """The MSDE label_mode distill_mlp used for ``cfg.mlp_targets``."""
+    return _MSDE_MODES[str(cfg.mlp_targets)]
 
 
 def _find_checkpoint(mlflow, cfg: DictConfig, method_name: str, modality: str) -> tuple[str, str]:
-    # mlp_targets/msde_mode are matched below rather than in the filter so that
-    # legacy runs (no msde_mode param, mlp_targets=label_scores) are found too.
-    filter_string = (
-        "params.type = 'few_shot' "
-        f"and params.modality = '{modality}' "
-        f"and params.encoder = '{cfg.encoder}' "
-        f"and params.method = '{method_name}' "
-        f"and params.support_size = '{int(cfg.support_size)}'"
-    )
-    runs = mlflow.search_runs(
-        experiment_names=[str(cfg.mlflow.experiment_name)],
-        filter_string=filter_string,
-        order_by=["start_time DESC"],
-        output_format="pandas",
-    )
-    wanted = (str(cfg.mlp_targets), _msde_mode(cfg))
-    if not runs.empty:
-        runs = runs[[_run_targets(run) == wanted for _, run in runs.iterrows()]]
-    if runs.empty:
-        raise FileNotFoundError(
-            "No matching few-shot checkpoint found for "
-            f"type=few_shot modality={modality} encoder={cfg.encoder} "
-            f"method={method_name} support_size={cfg.support_size} "
-            f"mlp_targets={cfg.mlp_targets} msde_mode={_msde_mode(cfg)}"
+    """Return ``(run_id, local model.pt path)`` of the distill_mlp run to evaluate.
+
+    ``cfg.distill_run_id`` selects a run directly; otherwise the latest finished
+    distill_mlp root run matching the target tags is used, restricted to
+    ``cfg.trial_hash`` (the runs of one Optuna trial) or else to
+    ``cfg.campaign``.
+    """
+    if cfg.get("distill_run_id"):
+        run_id = str(cfg.distill_run_id)
+    else:
+        wanted = {
+            "level": "root",
+            "type": "distill_mlp",
+            "modality": modality,
+            "encoder": str(cfg.encoder),
+            "method": method_name,
+            "support_size": str(int(cfg.support_size)),
+            "mlp_targets": str(cfg.mlp_targets),
+            "msde_mode": _msde_mode(cfg),
+            "distill_mlp": "True",
+        }
+        if cfg.get("trial_hash"):
+            wanted["trial_hash"] = str(cfg.trial_hash)
+        else:
+            wanted["campaign"] = str(cfg.campaign)
+        filter_string = " and ".join(f"tags.{key} = '{value}'" for key, value in wanted.items())
+        runs = mlflow.search_runs(
+            experiment_names=[str(cfg.mlflow.experiment_name)],
+            filter_string=f"{filter_string} and attributes.status = 'FINISHED'",
+            order_by=["start_time DESC"],
+            output_format="pandas",
         )
-    artifact_run_id = str(runs.iloc[0]["params.run_id"])
-    checkpoint = mlflow.artifacts.download_artifacts(run_id=artifact_run_id, artifact_path="model.pt")
-    return artifact_run_id, checkpoint
+        if runs.empty:
+            raise FileNotFoundError(
+                "No matching distill_mlp run found for "
+                + " ".join(f"{key}={value}" for key, value in wanted.items())
+            )
+        run_id = str(runs.iloc[0]["run_id"])
+    checkpoint = mlflow.artifacts.download_artifacts(run_id=run_id, artifact_path="model.pt")
+    return run_id, checkpoint
 
 
 def _write_predictions(path: Path, dataset, scores: torch.Tensor, source_labels: np.ndarray, binary: np.ndarray) -> None:
@@ -200,6 +198,8 @@ def _log_metric_runs(
     run_type: str,
     mode: str,
     artifact_run_id: str,
+    campaign: str,
+    trial_hash: str,
 ) -> None:
     for row in rows:
         with mlflow.start_run(run_name=f"{run_type}_{row['dataset']}_{row['comparison']}"):
@@ -215,6 +215,8 @@ def _log_metric_runs(
                 "comparison": str(row["comparison"]),
                 "mode": mode,
                 "run_id": artifact_run_id,
+                "campaign": campaign,
+                "trial_hash": trial_hash,
             })
             mlflow.log_metrics({
                 "auroc": float(row["auroc"]),
@@ -247,7 +249,10 @@ def main(cfg: DictConfig) -> None:
     mlflow.set_experiment(str(cfg.mlflow.experiment_name))
 
     run_id, checkpoint_path = _find_checkpoint(mlflow, cfg, method_name, modality_name)
-    logger.info("Using few-shot checkpoint %s", run_id)
+    # Carried over from the evaluated distill run so plots can separate
+    # experiment sets (campaign) and Optuna trials (trial_hash).
+    source_tags = mlflow.tracking.MlflowClient().get_run(run_id).data.tags
+    logger.info("Using distill_mlp checkpoint %s", run_id)
     dataset = instantiate(cfg.modality)
     embeddings, _ = dataset.get_data()
     if len(dataset) == 0:
@@ -280,7 +285,7 @@ def main(cfg: DictConfig) -> None:
         run_dir = Path(tempfile.mkdtemp(prefix=f"{cfg.mlflow.type}_", dir=staging_root))
         try:
             OmegaConf.save(cfg, run_dir / "zero_shot.yaml", resolve=True)
-            (run_dir / "source_few_shot_run.json").write_text(json.dumps({"run_id": run_id}, indent=2))
+            (run_dir / "source_distill_run.json").write_text(json.dumps({"run_id": run_id}, indent=2))
             _write_predictions(run_dir / "predictions.csv", dataset, scores, source_labels, binary_labels)
             with (run_dir / "metrics.csv").open("w", newline="") as stream:
                 writer = csv.DictWriter(stream, fieldnames=list(rows[0]) if rows else ["dataset", "comparison"])
@@ -302,6 +307,8 @@ def main(cfg: DictConfig) -> None:
         run_type=str(cfg.mlflow.type),
         mode=str(cfg.method.get("mode") or "none"),
         artifact_run_id=artifact_run_id,
+        campaign=source_tags.get("campaign", "adhoc"),
+        trial_hash=source_tags.get("trial_hash", "none"),
     )
     print(f"MLflow run: {artifact_run_id}\nArtifacts stored in MLflow artifact store", flush=True)
 

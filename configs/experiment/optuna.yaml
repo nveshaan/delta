@@ -1,0 +1,26 @@
+# @package _global_
+# Optuna sweep for scripts/distill_mlp.py: jointly tune the selected method's
+# pseudolabeler and (for mlp_targets=scores/distances) MSDE. Every trial runs
+# all support_sizes x modalities and maximizes their equally weighted mean
+# objective. One study per method x encoder x mlp_targets:
+#
+#   uv run python scripts/distill_mlp.py -m +experiment=optuna \
+#       method=laplacianshot_msde encoder=CLIP mlp_targets=scores
+defaults:
+  - override /hydra/sweeper: optuna
+
+campaign: optuna
+support_sizes: [5, 10, 20, 30, 50]
+modalities: [chest, fundus, mri, oct]
+
+hydra:
+  sweeper:
+    direction: maximize
+    study_name: ${hydra.runtime.choices.method}_${encoder}_${mlp_targets}
+    # Relative to the repository root.
+    storage: sqlite:///experiments/optuna.db
+    n_trials: 50
+    n_jobs: 1
+    sampler:
+      seed: 123
+    custom_search_space: utils.search_space.suggest

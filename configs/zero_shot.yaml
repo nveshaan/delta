@@ -20,8 +20,12 @@ split: test
 support_size: 5
 mlp_targets: scores
 # mlp_targets: labels | scores | distances
-# few-shot msde.mode to evaluate (mlp_targets=scores/distances): no_msde | msde | same_label | zero_label
-msde_mode: msde
+# distill_mlp run to evaluate; null picks the latest finished run matching the settings above.
+distill_run_id: null
+# Restrict the search to the runs of one distill_mlp trial (tags.trial_hash);
+# otherwise to the distill_mlp runs of this campaign.
+trial_hash: null
+campaign: adhoc
 seed: 42
 device: auto
 

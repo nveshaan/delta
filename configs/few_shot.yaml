@@ -19,36 +19,18 @@ encoder: CLIP
 split: train
 support_size: 5
 seed: 42
+# Device for pseudolabeling (and MSDE/MLP in distill_mlp.py): auto | cpu | cuda | mps
+device: auto
 
-# MLP distillation target: labels (pseudolabels), scores (MSDE + GDE), or
-# distances (MSDE total_distance); scores/distances use msde.mode.
-mlp_targets: scores
-distill_mlp: true
-
-msde:
-  # MSDE before GDE scoring / for distances: no_msde | msde | same_label | zero_label
-  # (distances cannot use no_msde)
-  mode: msde
-  k: 50
-  nbd_sample_count_threshold: 70
-  learning_rate: 0.33
-  max_iters_shift: 8
-  shift_threshold: 0.01
-  device: auto
-  use_chunking: true
-  weight_chunk_size: 2048
-  enable_gradients: false
-
-mlp:
-  _target_: models.VanillaNetwork
-
-training:
-  epochs: 30
-  learning_rate: 1.0e-3
-  weight_decay: 1.0e-4
-  validation_fraction: 0.15
-  patience: 7
-  seed: ${seed}
+# Run every support_sizes x modalities combination in turn, e.g. [5, 10] and
+# [chest, fundus, mri, oct], and return the mean of their objectives (equal
+# weight per modality and support size); null runs `support_size` / `modality`.
+support_sizes: null
+modalities: null
+# Free-form label for grouping runs (tags.campaign); not part of the config hashes.
+campaign: adhoc
+# Delete an identical finished run and run again (same as passing --redo).
+redo: false
 
 mlflow:
   tracking_uri: sqlite:///experiments/mlruns.db

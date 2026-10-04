@@ -1,0 +1,36 @@
+# Inherits the pseudolabel config from few_shot.yaml so that the cached
+# pseudolabels of the matching few-shot run can be found by hash.
+defaults:
+  - few_shot
+  - _self_
+
+# MLP distillation target: labels (pseudolabels), scores (same_label MSDE +
+# GDE), or distances (zero_label MSDE total_distance).
+mlp_targets: scores
+distill_mlp: true
+
+# MSDE settings for scores/distances (the label mode follows mlp_targets).
+msde:
+  k: 50
+  nbd_sample_count_threshold: 70
+  learning_rate: 0.33
+  max_iters_shift: 8
+  shift_threshold: 0.01
+  use_chunking: true
+  weight_chunk_size: 2048
+  enable_gradients: false
+
+mlp:
+  _target_: models.VanillaNetwork
+
+training:
+  epochs: 30
+  learning_rate: 1.0e-3
+  weight_decay: 1.0e-4
+  validation_fraction: 0.15
+  patience: 7
+  seed: ${seed}
+
+mlflow:
+  run_name: distill_${hydra:runtime.choices.method}_${modality.modality}
+  type: distill_mlp

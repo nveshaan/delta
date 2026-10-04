@@ -1,9 +1,11 @@
 """Plot zero-shot performance versus consistency for encoder/method pairs.
 
-The MLflow metric runs produced by ``scripts/zero_shot.py`` are aggregated in
-the following order:
+The MLflow metric runs produced by ``scripts/zero_shot.py`` for one campaign
+(``adhoc`` for the encoder x method x modality x support_size x mlp_targets
+grid, ``optuna`` for tuned models) are aggregated in the following order:
 
-1. Average AUROC, AUPRC, and precision-at-n over the three ``mlp_targets``.
+1. Average AUROC, AUPRC, and precision-at-n over the three ``mlp_targets``
+   (``labels``, ``scores``, ``distances``).
 2. For each dataset, use ``pooled_nonzero`` when subtype comparisons exist;
    otherwise use ``label_0_vs_1``. Average the three metrics over runs at the
    dataset level and form their composite score.
@@ -69,23 +71,27 @@ def _normalise_tracking_uri(tracking_uri: str) -> str:
 
 
 def load_zero_shot_runs(
-    *, tracking_uri: str = DEFAULT_TRACKING_URI, experiment_name: str = "delta"
+    *, tracking_uri: str = DEFAULT_TRACKING_URI, experiment_name: str = "delta", campaign: str = "adhoc"
 ) -> pd.DataFrame:
-    """Query finished zero-shot metric runs from MLflow."""
+    """Query finished zero-shot metric runs of one campaign from MLflow."""
     try:
         import mlflow
     except ImportError as error:  # pragma: no cover - depends on environment
         raise RuntimeError("MLflow is required to query the experiment runs") from error
 
     mlflow.set_tracking_uri(_normalise_tracking_uri(tracking_uri))
-    filter_string = "params.type = 'zero_shot' and attributes.status = 'FINISHED'"
+    filter_string = (
+        f"params.type = 'zero_shot' and params.campaign = '{campaign}' and attributes.status = 'FINISHED'"
+    )
     runs = mlflow.search_runs(
         experiment_names=[experiment_name],
         filter_string=filter_string,
         output_format="pandas",
     )
     if runs.empty:
-        raise ValueError(f"No finished zero-shot runs found in MLflow experiment {experiment_name!r}")
+        raise ValueError(
+            f"No finished zero-shot runs of campaign {campaign!r} found in MLflow experiment {experiment_name!r}"
+        )
 
     renamed = runs.rename(
         columns={
@@ -178,11 +184,6 @@ def aggregate_scores(runs: pd.DataFrame) -> pd.DataFrame:
     overall["support_size"] = "all"
     final = pd.concat([final, overall], ignore_index=True)
     return final.sort_values(pair_group).reset_index(drop=True)
-
-
-def add_all_support_size_scores(scores: pd.DataFrame) -> pd.DataFrame:
-    """Return scores, including the all-support-size rows from aggregation."""
-    return scores.copy()
 
 
 def _apply_publication_style() -> None:
@@ -299,14 +300,17 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tracking-uri", default=DEFAULT_TRACKING_URI)
     parser.add_argument("--experiment-name", default="delta")
+    parser.add_argument("--campaign", default="adhoc", help="zero-shot runs to plot (adhoc: grid, optuna: tuned)")
     parser.add_argument("--output-stem", type=Path, default=DEFAULT_OUTPUT_STEM)
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    runs = load_zero_shot_runs(tracking_uri=args.tracking_uri, experiment_name=args.experiment_name)
-    scores = add_all_support_size_scores(aggregate_scores(runs))
+    runs = load_zero_shot_runs(
+        tracking_uri=args.tracking_uri, experiment_name=args.experiment_name, campaign=args.campaign
+    )
+    scores = aggregate_scores(runs)
     outputs = plot_scores(scores, output_stem=args.output_stem)
     LOGGER.info("Aggregated %d encoder/method/support-size points", len(scores))
     LOGGER.info("Saved %s", ", ".join(str(path) for path in outputs))
