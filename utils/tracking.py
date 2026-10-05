@@ -385,16 +385,20 @@ def hydra_entry(
         objective = for_each_combination(cfg, execute_one)
     except Exception as error:
         hydra_config = HydraConfig.get()
-        if hydra_config.mode != RunMode.MULTIRUN or re_raise_multirun_failure:
+        if hydra_config.mode != RunMode.MULTIRUN:
             raise
         message = (
             f"{job_name} JOB FAILED\n"
             f"overrides=[{', '.join(hydra_config.overrides.task)}]\n"
             f"error={type(error).__name__}: {error}"
         )
+        # Printed before a re-raise too: the Optuna sweeper reports a failed
+        # trial only through Hydra logging, which the configs disable.
         print(message, file=sys.stderr, flush=True)
         traceback.print_exc(file=sys.stderr)
         logger.error(message)
+        if re_raise_multirun_failure:
+            raise
         return float("nan")
     if math.isnan(objective):
         logger.warning("%s objective is NaN", job_name)
