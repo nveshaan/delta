@@ -6,6 +6,13 @@ and tunes MSDE with ``distill_mlp.py`` (one study per method x encoder x
 mlp_targets). ``labels`` targets use no MSDE, so ``--stage msde
 --mlp-targets labels`` runs a single distillation with the stage-1 parameters
 instead of a study.
+
+Each study has a budget of ``n_trials`` completed trials (the experiment
+config, or ``hydra.sweeper.n_trials=N``). Rerunning resumes: a finished study is
+skipped (its best parameters are re-exported), a partial one runs only its
+missing trials, and trials left RUNNING by a killed process are marked FAIL.
+Run one study at a time: the stale-trial cleanup assumes no other process is
+running the same study.
 """
 
 from __future__ import annotations
@@ -23,12 +30,11 @@ from scripts.export_optuna_best import (
     DEFAULT_OUTPUT_ROOT,
     DEFAULT_STORAGE,
     STAGES,
+    experiment_config,
     export_best,
     load_best_params,
     study_name,
 )
-
-EXPERIMENT_DIR = PROJECT_ROOT / "configs" / "experiment"
 
 
 def _method_overrides(method: str, encoder: str, output_root: Path) -> list[str]:
@@ -44,21 +50,20 @@ def _method_overrides(method: str, encoder: str, output_root: Path) -> list[str]
     return [f"{key}={value}" for key, value in best["params"].items()]
 
 
-def _sampler_seed(stage: str, name: str, storage: str) -> int:
-    """The configured sampler seed, offset by the trials already in the study.
-
-    A resumed study would otherwise replay the seeded sampler's first draws,
-    which during the random startup phase repeats the earlier trials exactly.
-    """
+def _prepare_study(name: str, storage: str) -> tuple[int, int]:
+    """Fail stale RUNNING trials; return ``(completed trials, all trials)``."""
     import optuna
-    from omegaconf import OmegaConf
 
-    seed = int(OmegaConf.load(EXPERIMENT_DIR / f"optuna_{stage}.yaml").hydra.sweeper.sampler.seed)
     try:
-        existing = len(optuna.load_study(study_name=name, storage=storage).trials)
+        study = optuna.load_study(study_name=name, storage=storage)
     except KeyError:
-        existing = 0
-    return seed + existing
+        return 0, 0
+    for trial in study.trials:
+        if trial.state == optuna.trial.TrialState.RUNNING:
+            print(f"Marking stale RUNNING trial {trial.number} of {name} as FAIL", flush=True)
+            study._storage.set_trial_state_values(trial._trial_id, optuna.trial.TrialState.FAIL)
+    completed = sum(trial.state == optuna.trial.TrialState.COMPLETE for trial in study.trials)
+    return completed, len(study.trials)
 
 
 def main() -> int:
@@ -87,31 +92,50 @@ def main() -> int:
         else:
             command = ["-m", "+experiment=optuna_msde", *base, f"mlp_targets={mlp_targets}", *fixed]
     command.append(f"hydra.sweeper.storage={args.storage}")
-    if mlp_targets != "labels" and not any(arg.startswith("hydra.sweeper.sampler.seed=") for arg in extra):
+    if mlp_targets != "labels":
+        sweeper = experiment_config(args.stage)
+        budget = int(sweeper.n_trials)
+        for arg in extra:
+            if arg.startswith("hydra.sweeper.n_trials="):
+                budget = int(arg.split("=", 1)[1])
+        extra = [arg for arg in extra if not arg.startswith("hydra.sweeper.n_trials=")]
         name = study_name(args.stage, args.method, args.encoder, mlp_targets)
-        command.append(f"hydra.sweeper.sampler.seed={_sampler_seed(args.stage, name, args.storage)}")
-    # Extra arguments are passed through as Hydra overrides, e.g.
-    # hydra.sweeper.n_trials=10.
+        completed, existing = _prepare_study(name, args.storage)
+        remaining = budget - completed
+        if remaining <= 0:
+            print(f"{name}: {completed}/{budget} trials complete; skipping", flush=True)
+            return _export(args, mlp_targets, budget, 0)
+        print(f"{name}: {completed}/{budget} trials complete; running {remaining}", flush=True)
+        command.append(f"hydra.sweeper.n_trials={remaining}")
+        # Offset the seed by the trials already in the study: a resumed study
+        # would otherwise replay the seeded sampler's first draws, which during
+        # the random startup phase repeats the earlier trials exactly.
+        if not any(arg.startswith("hydra.sweeper.sampler.seed=") for arg in extra):
+            command.append(f"hydra.sweeper.sampler.seed={int(sweeper.sampler.seed) + existing}")
+    # Extra arguments are passed through as Hydra overrides.
     command = [sys.executable, str(PROJECT_ROOT / "scripts" / script), *command, *extra]
     print(" ".join(command), flush=True)
     result = subprocess.run(command, cwd=PROJECT_ROOT)
     if mlp_targets == "labels":
         return result.returncode
 
+    return _export(args, mlp_targets, budget, result.returncode)
+
+
+def _export(args: argparse.Namespace, mlp_targets: str | None, budget: int, returncode: int) -> int:
     # Export even when the study process exits nonzero: completed trials from
     # a partially finished study are still useful and remain reproducible.
     try:
         output_path = export_best(
             args.stage, args.method, args.encoder, mlp_targets,
-            storage=args.storage, output_root=args.output_root,
+            storage=args.storage, output_root=args.output_root, n_trials=budget,
         )
         print(f"Best Optuna params written to {output_path}")
     except Exception as error:
         print(f"Could not export best Optuna params: {error}", file=sys.stderr)
-        if result.returncode == 0:
+        if returncode == 0:
             return 1
-    return result.returncode
-
+    return returncode
 
 if __name__ == "__main__":
     raise SystemExit(main())

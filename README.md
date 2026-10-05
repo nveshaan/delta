@@ -224,8 +224,8 @@ for method in laplacianshot laplacianshot_msde; do
 done
 
 # Extra arguments are passed to Hydra, e.g. hydra.sweeper.n_trials=20.
-# Rerunning a stage adds n_trials more trials to its existing study (the
-# wrapper offsets the sampler seed so resumed trials are not repeats).
+# Rerunning resumes: each study has a budget of n_trials completed trials, so
+# finished studies are skipped and partial ones run only the missing trials.
 
 # Zero-shot evaluation of one trial: take its tags.trial_hash from the MLflow
 # run with the highest metrics.trial_objective.

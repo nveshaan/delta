@@ -4,6 +4,11 @@ Stage ``method`` studies are named ``<method>_<encoder>_method`` and exported
 to ``<output_root>/<method>/<encoder>/method/best_params.yaml``; stage ``msde``
 studies are named ``<method>_<encoder>_<mlp_targets>_msde`` and exported to
 ``<output_root>/<method>/<encoder>/<mlp_targets>/best_params.yaml``.
+
+Each study has a budget of ``n_trials`` completed trials
+(``configs/experiment/optuna_<stage>.yaml``); the best trial is taken from the
+first ``n_trials`` completed trials, so trials added past the budget (e.g. by an
+accidental rerun) never change the exported parameters.
 """
 
 from __future__ import annotations
@@ -20,7 +25,21 @@ import yaml
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_STORAGE = f"sqlite:///{PROJECT_ROOT / 'experiments' / 'optuna.db'}"
 DEFAULT_OUTPUT_ROOT = PROJECT_ROOT / "experiments" / "optuna_best"
+EXPERIMENT_DIR = PROJECT_ROOT / "configs" / "experiment"
 STAGES = ("method", "msde")
+
+
+def experiment_config(stage: str):
+    """The sweeper config of ``configs/experiment/optuna_<stage>.yaml``."""
+    from omegaconf import OmegaConf
+
+    return OmegaConf.load(EXPERIMENT_DIR / f"optuna_{stage}.yaml").hydra.sweeper
+
+
+def budget_trials(study: optuna.Study, n_trials: int) -> list[optuna.trial.FrozenTrial]:
+    """The first ``n_trials`` completed trials of ``study``, in trial order."""
+    completed = [trial for trial in study.trials if trial.state == optuna.trial.TrialState.COMPLETE]
+    return sorted(completed, key=lambda trial: trial.number)[:n_trials]
 
 
 def study_name(stage: str, method: str, encoder: str, mlp_targets: str | None = None) -> str:
@@ -58,14 +77,18 @@ def export_best(
     *,
     storage: str = DEFAULT_STORAGE,
     output_root: Path = DEFAULT_OUTPUT_ROOT,
+    n_trials: int | None = None,
 ) -> Path:
     name = study_name(stage, method, encoder, mlp_targets)
     study = optuna.load_study(study_name=name, storage=storage)
-    completed = [trial for trial in study.trials if trial.state == optuna.trial.TrialState.COMPLETE]
+    if n_trials is None:
+        n_trials = int(experiment_config(stage).n_trials)
+    completed = budget_trials(study, n_trials)
     if not completed:
         raise RuntimeError(f"Study {name!r} has no completed trials")
 
-    best = study.best_trial
+    pick = max if study.direction == optuna.study.StudyDirection.MAXIMIZE else min
+    best = pick(completed, key=lambda trial: trial.value)
     output_path = best_params_path(stage, method, encoder, mlp_targets, output_root)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -83,6 +106,7 @@ def export_best(
             key: yaml.safe_load(str(value)) for key, value in best.user_attrs.items() if key.startswith("method.")
         },
         "completed_trials": len(completed),
+        "trial_budget": n_trials,
         "exported_at": datetime.now(timezone.utc).isoformat(),
     }
     output_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
@@ -98,6 +122,8 @@ def main() -> int:
                         help="required for --stage msde")
     parser.add_argument("--storage", default=DEFAULT_STORAGE)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
+    parser.add_argument("--n-trials", type=int, default=None,
+                        help="trial budget (default: n_trials of the stage's experiment config)")
     args = parser.parse_args()
     if args.stage == "msde" and args.mlp_targets is None:
         parser.error("--stage msde requires --mlp-targets")
@@ -108,6 +134,7 @@ def main() -> int:
         args.mlp_targets if args.stage == "msde" else None,
         storage=args.storage,
         output_root=args.output_root,
+        n_trials=args.n_trials,
     )
     print(f"Best Optuna params written to {output_path}")
     return 0
