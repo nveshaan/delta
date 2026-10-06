@@ -17,12 +17,22 @@ The figure contains one scatter panel per support size. Each point is one
 encoder/method pair; color identifies the encoder and marker identifies the
 method. PNG and PDF outputs are written to ``assets/`` by default.
 
+``--with-optuna-best`` adds the Optuna best parameters of experiment set 2 as
+extra points (dark outline), each joined by an arrow from the same pair's
+point of ``--campaign``. Their runs are selected as in
+``zero_shot_mlp_targets_delta.py --campaign optuna`` and read from
+``--optuna-tracking-uri``.
+
 Usage::
 
     # Experiment set 1 (default --campaign adhoc).
     uv run python plots/zero_shot_encoder_method_consistency.py
 
-    # Experiment set 2.
+    # Experiment set 1 plus the Optuna best parameters of experiment set 2.
+    uv run python plots/zero_shot_encoder_method_consistency.py --with-optuna-best \
+        --optuna-tracking-uri sqlite:///<set 2 mlruns.db>
+
+    # Experiment set 2 (all trials).
     uv run python plots/zero_shot_encoder_method_consistency.py --campaign optuna
 """
 
@@ -65,6 +75,7 @@ PALETTE = {
     "violet": "#9A4D8E",
 }
 COLORS = list(PALETTE.values())
+OPTUNA_EDGE = "#111111"
 MARKERS = ("o", "s", "^", "D", "P", "X", "v", "<", ">")
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -222,8 +233,16 @@ def _apply_publication_style() -> None:
     )
 
 
-def plot_scores(scores: pd.DataFrame, output_stem: Path = DEFAULT_OUTPUT_STEM) -> list[Path]:
-    """Create one scatter panel per support size and save PNG/PDF outputs."""
+def plot_scores(
+    scores: pd.DataFrame, output_stem: Path = DEFAULT_OUTPUT_STEM, best_scores: pd.DataFrame | None = None
+) -> list[Path]:
+    """Create one scatter panel per support size and save PNG/PDF outputs.
+
+    ``best_scores`` (from ``aggregate_scores`` of the Optuna best runs) are
+    drawn as outlined extra points with an arrow from the matching pair.
+    """
+    if best_scores is None:
+        best_scores = scores.iloc[0:0]
     _apply_publication_style()
     support_sizes = sorted(
         scores["support_size"].unique(),
@@ -243,13 +262,13 @@ def plot_scores(scores: pd.DataFrame, output_stem: Path = DEFAULT_OUTPUT_STEM) -
         sharey=True,
     )
     axes = axes.ravel()
-    encoders = sorted(scores["encoder"].unique())
-    methods = sorted(scores["method"].unique())
+    encoders = sorted(set(scores["encoder"]) | set(best_scores["encoder"]))
+    methods = sorted(set(scores["method"]) | set(best_scores["method"]))
     encoder_colors = {encoder: COLORS[index % len(COLORS)] for index, encoder in enumerate(encoders)}
     method_markers = {method: MARKERS[index % len(MARKERS)] for index, method in enumerate(methods)}
 
-    x_values = scores["mean"].to_numpy()
-    y_values = scores["std"].to_numpy()
+    x_values = np.concatenate([scores["mean"].to_numpy(), best_scores["mean"].to_numpy()])
+    y_values = np.concatenate([scores["std"].to_numpy(), best_scores["std"].to_numpy()])
     x_margin = max((x_values.max() - x_values.min()) * 0.08, 0.01)
     y_margin = max((y_values.max() - y_values.min()) * 0.12, 0.005)
     x_limits = (x_values.min() - x_margin, x_values.max() + x_margin)
@@ -268,6 +287,29 @@ def plot_scores(scores: pd.DataFrame, output_stem: Path = DEFAULT_OUTPUT_STEM) -
                 linewidths=0.7,
                 alpha=0.9,
                 zorder=3,
+            )
+        pairs = panel.set_index(["encoder", "method"])
+        for _, row in best_scores[best_scores["support_size"] == support_size].iterrows():
+            key = (row["encoder"], row["method"])
+            if key in pairs.index:
+                start = pairs.loc[key]
+                axis.annotate(
+                    "",
+                    xy=(row["mean"], row["std"]),
+                    xytext=(start["mean"], start["std"]),
+                    arrowprops={"arrowstyle": "-|>", "color": encoder_colors[row["encoder"]], "linewidth": 1.1,
+                                "alpha": 0.7, "shrinkA": 5, "shrinkB": 6, "mutation_scale": 10},
+                    zorder=2,
+                )
+            axis.scatter(
+                row["mean"],
+                row["std"],
+                s=110,
+                color=encoder_colors[row["encoder"]],
+                marker=method_markers[row["method"]],
+                edgecolors=OPTUNA_EDGE,
+                linewidths=1.6,
+                zorder=4,
             )
         title = "All support sizes" if support_size == "all" else f"support_size = {support_size}"
         axis.set_title(title)
@@ -298,6 +340,13 @@ def plot_scores(scores: pd.DataFrame, output_stem: Path = DEFAULT_OUTPUT_STEM) -
                markersize=8, label=name)
         for name in methods
     ]
+    if not best_scores.empty:
+        method_handles += [
+            Line2D([0], [0], marker="o", color="none", markerfacecolor="#BBBBBB", markeredgecolor="white",
+                   markersize=8, label="grid parameters"),
+            Line2D([0], [0], marker="o", color="none", markerfacecolor="#BBBBBB", markeredgecolor=OPTUNA_EDGE,
+                   markeredgewidth=1.6, markersize=8, label="Optuna best"),
+        ]
     fig.legend(
         handles=encoder_handles + method_handles,
         loc="lower center",
@@ -322,6 +371,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tracking-uri", default=DEFAULT_TRACKING_URI)
     parser.add_argument("--experiment-name", default="delta")
     parser.add_argument("--campaign", default="adhoc", help="zero-shot runs to plot (adhoc: grid, optuna: tuned)")
+    parser.add_argument("--with-optuna-best", action="store_true",
+                        help="add the Optuna best parameters (experiment set 2) as extra points")
+    parser.add_argument("--optuna-tracking-uri", default=DEFAULT_TRACKING_URI,
+                        help="MLflow store of the Optuna runs (--with-optuna-best)")
+    parser.add_argument("--optuna-best-root", type=Path, default=PROJECT_ROOT / "experiments" / "optuna_best",
+                        help="exported Optuna best parameters (--with-optuna-best)")
     parser.add_argument("--output-stem", type=Path, default=DEFAULT_OUTPUT_STEM)
     return parser.parse_args()
 
@@ -332,7 +387,18 @@ def main() -> None:
         tracking_uri=args.tracking_uri, experiment_name=args.experiment_name, campaign=args.campaign
     )
     scores = aggregate_scores(runs)
-    outputs = plot_scores(scores, output_stem=args.output_stem)
+    best_scores = None
+    if args.with_optuna_best:
+        # Imported here: that module imports this one.
+        from zero_shot_mlp_targets_delta import load_best_zero_shot_runs
+
+        best_runs = load_best_zero_shot_runs(
+            tracking_uri=args.optuna_tracking_uri, experiment_name=args.experiment_name,
+            optuna_best_root=args.optuna_best_root, encoders=None, methods=None,
+        )
+        best_scores = aggregate_scores(best_runs)
+        LOGGER.info("Aggregated %d Optuna best points", len(best_scores))
+    outputs = plot_scores(scores, output_stem=args.output_stem, best_scores=best_scores)
     LOGGER.info("Aggregated %d encoder/method/support-size points", len(scores))
     LOGGER.info("Saved %s", ", ".join(str(path) for path in outputs))
 
