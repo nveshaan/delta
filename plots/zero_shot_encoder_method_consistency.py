@@ -109,14 +109,17 @@ def load_zero_shot_runs(
         raise RuntimeError("MLflow is required to query the experiment runs") from error
 
     mlflow.set_tracking_uri(_normalise_tracking_uri(tracking_uri))
-    filter_string = (
-        f"params.type = 'zero_shot' and params.campaign = '{campaign}' and attributes.status = 'FINISHED'"
-    )
+    # Runs logged before the campaign parameter existed (experiment set 1) have
+    # no params.campaign and count as adhoc; MLflow cannot filter on a missing
+    # parameter, so the campaign is filtered here.
     runs = mlflow.search_runs(
         experiment_names=[experiment_name],
-        filter_string=filter_string,
+        filter_string="params.type = 'zero_shot' and attributes.status = 'FINISHED'",
         output_format="pandas",
     )
+    if not runs.empty:
+        run_campaign = runs.get("params.campaign", pd.Series(None, index=runs.index, dtype=object))
+        runs = runs[run_campaign.fillna("adhoc") == campaign]
     if trial_hashes is not None and not runs.empty:
         runs = runs[runs["params.trial_hash"].isin(set(trial_hashes))]
     if runs.empty:
