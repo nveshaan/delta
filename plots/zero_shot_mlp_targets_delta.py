@@ -19,13 +19,22 @@ modality differences as small points shaped by modality, and a zero line for
 parity with ``labels``. Each panel has its own y-axis range. PNG and PDF
 outputs are written to ``assets/`` by default.
 
+With ``--campaign optuna`` (experiment set 2) only the Optuna best parameters
+are plotted: for every method/encoder in ``experiments/optuna_best``, the
+``scores`` and ``distances`` runs are those of the stage-2 best trial and the
+``labels`` runs those of the stage-1 best parameters (``labels`` has no stage-2
+study). Each best configuration is matched to its distill_mlp runs by their
+logged parameters, and their ``trial_hash`` selects the zero-shot runs. A best
+configuration without zero-shot runs is an error that prints the
+``zero_shot.py`` command to evaluate it.
+
 Usage::
 
     # Experiment set 1 (default --campaign adhoc).
     uv run python plots/zero_shot_mlp_targets_delta.py
 
-    # Experiment set 2.
-    uv run python plots/zero_shot_mlp_targets_delta.py --campaign optuna --encoders <encoder 1> <encoder 2> --methods <method 1> <method 2>
+    # Experiment set 2 (Optuna best parameters).
+    uv run python plots/zero_shot_mlp_targets_delta.py --campaign optuna
 """
 
 from __future__ import annotations
@@ -40,7 +49,9 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
+import numpy as np
 import pandas as pd
+import yaml
 
 from zero_shot_encoder_method_consistency import (
     DEFAULT_TRACKING_URI,
@@ -51,11 +62,15 @@ from zero_shot_encoder_method_consistency import (
     PROJECT_ROOT,
     _apply_publication_style,
     _choose_dataset_comparisons,
+    _normalise_tracking_uri,
     load_zero_shot_runs,
 )
 
 
 DEFAULT_OUTPUT_STEM = PROJECT_ROOT / "assets" / "zero_shot_mlp_targets_delta"
+DEFAULT_OPTUNA_OUTPUT_STEM = PROJECT_ROOT / "assets" / "zero_shot_mlp_targets_delta_optuna"
+DEFAULT_OPTUNA_BEST_ROOT = PROJECT_ROOT / "experiments" / "optuna_best"
+ZERO_SHOT_SWEEP = "modality=chest,fundus,mri,oct support_size=5,10,20,30,50"
 BASELINE_TARGET = "labels"
 COMPARED_TARGETS = ("scores", "distances")
 TARGET_STYLES = {
@@ -65,6 +80,108 @@ TARGET_STYLES = {
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 LOGGER = logging.getLogger(__name__)
+
+
+def best_configurations(
+    optuna_best_root: Path, encoders: list[str] | None = None, methods: list[str] | None = None
+) -> dict[tuple[str, str, str], dict[str, object]]:
+    """The best parameters of every method/encoder/target in ``optuna_best_root``.
+
+    Keys are ``(method, encoder, mlp_targets)``; values are the ``method.*``
+    (stage 1) and, for ``scores``/``distances``, ``msde.*`` (stage 2) parameters.
+    """
+    configurations: dict[tuple[str, str, str], dict[str, object]] = {}
+    for stage1_path in sorted(optuna_best_root.glob("*/*/method/best_params.yaml")):
+        encoder_dir = stage1_path.parent.parent
+        method, encoder = encoder_dir.parent.name, encoder_dir.name
+        if (methods and method not in methods) or (encoders and encoder not in encoders):
+            continue
+        method_params = yaml.safe_load(stage1_path.read_text(encoding="utf-8"))["params"]
+        configurations[(method, encoder, BASELINE_TARGET)] = dict(method_params)
+        for target in COMPARED_TARGETS:
+            target_path = encoder_dir / target / "best_params.yaml"
+            if not target_path.is_file():
+                LOGGER.warning("No stage-2 best parameters at %s", target_path)
+                continue
+            best = yaml.safe_load(target_path.read_text(encoding="utf-8"))
+            if best["fixed_params"] and best["fixed_params"] != method_params:
+                raise ValueError(f"{target_path} was tuned with method parameters other than {stage1_path}")
+            configurations[(method, encoder, target)] = {**method_params, **best["params"]}
+    if not configurations:
+        raise ValueError(f"No Optuna best parameters found under {optuna_best_root}")
+    return configurations
+
+
+def _matches(column: pd.Series, value: object) -> pd.Series:
+    """Rows whose logged MLflow parameter (a string) equals ``value``."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return pd.Series(np.isclose(pd.to_numeric(column, errors="coerce"), value, rtol=1e-12, atol=0.0),
+                         index=column.index)
+    return column == str(value)
+
+
+def best_trial_hashes(
+    configurations: dict[tuple[str, str, str], dict[str, object]],
+    *,
+    tracking_uri: str,
+    experiment_name: str,
+) -> dict[tuple[str, str, str], str]:
+    """The ``trial_hash`` of the Optuna distill_mlp runs of every best configuration."""
+    import mlflow
+
+    mlflow.set_tracking_uri(_normalise_tracking_uri(tracking_uri))
+    hashes: dict[tuple[str, str, str], str] = {}
+    for (method, encoder, target), params in configurations.items():
+        runs = mlflow.search_runs(
+            experiment_names=[experiment_name],
+            filter_string=(
+                "tags.type = 'distill_mlp' and tags.level = 'root' and tags.campaign = 'optuna' "
+                f"and tags.method = '{method}' and tags.encoder = '{encoder}' "
+                f"and tags.mlp_targets = '{target}' and attributes.status = 'FINISHED'"
+            ),
+            output_format="pandas",
+        )
+        for key, value in params.items():
+            if runs.empty:
+                break
+            runs = runs[_matches(runs[f"params.{key}"], value)]
+        trial_hashes = sorted(runs["tags.trial_hash"].unique()) if not runs.empty else []
+        if len(trial_hashes) != 1:
+            raise ValueError(
+                f"Expected one distill_mlp trial for the best {method}/{encoder}/{target} parameters, "
+                f"found {len(trial_hashes)}: {trial_hashes}"
+            )
+        hashes[(method, encoder, target)] = trial_hashes[0]
+        LOGGER.info("Best %s/%s/%s: trial_hash %s (%d runs)", method, encoder, target, trial_hashes[0], len(runs))
+    return hashes
+
+
+def load_best_zero_shot_runs(
+    *, tracking_uri: str, experiment_name: str, optuna_best_root: Path,
+    encoders: list[str] | None, methods: list[str] | None,
+) -> pd.DataFrame:
+    """Zero-shot runs of the Optuna best configurations; fail if any is not evaluated."""
+    hashes = best_trial_hashes(
+        best_configurations(optuna_best_root, encoders, methods),
+        tracking_uri=tracking_uri, experiment_name=experiment_name,
+    )
+    try:
+        runs = load_zero_shot_runs(
+            tracking_uri=tracking_uri, experiment_name=experiment_name, campaign="optuna",
+            trial_hashes=hashes.values(), with_trial_hash=True,
+        )
+    except ValueError:
+        runs = pd.DataFrame(columns=["trial_hash"])
+    evaluated = set(runs["trial_hash"])
+    missing = {key: trial_hash for key, trial_hash in hashes.items() if trial_hash not in evaluated}
+    if missing:
+        commands = "\n".join(
+            f"uv run python scripts/zero_shot.py -m method={method} encoder={encoder} "
+            f"mlp_targets={target} trial_hash={trial_hash} {ZERO_SHOT_SWEEP}"
+            for (method, encoder, target), trial_hash in missing.items()
+        )
+        raise ValueError(f"{len(missing)} best configurations have no zero-shot runs; evaluate them with:\n{commands}")
+    return runs.drop(columns="trial_hash")
 
 
 def modality_scores(runs: pd.DataFrame) -> pd.DataFrame:
@@ -201,15 +318,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--campaign", default="adhoc", help="zero-shot runs to plot (adhoc: grid, optuna: tuned)")
     parser.add_argument("--encoders", nargs="+", help="encoders to plot (default: all with runs)")
     parser.add_argument("--methods", nargs="+", help="methods to plot (default: all with runs)")
-    parser.add_argument("--output-stem", type=Path, default=DEFAULT_OUTPUT_STEM)
+    parser.add_argument("--optuna-best-root", type=Path, default=DEFAULT_OPTUNA_BEST_ROOT,
+                        help="exported Optuna best parameters (--campaign optuna)")
+    parser.add_argument("--output-stem", type=Path, default=None,
+                        help="default: assets/zero_shot_mlp_targets_delta[_optuna]")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    runs = load_zero_shot_runs(
-        tracking_uri=args.tracking_uri, experiment_name=args.experiment_name, campaign=args.campaign
-    )
+    if args.campaign == "optuna":
+        runs = load_best_zero_shot_runs(
+            tracking_uri=args.tracking_uri, experiment_name=args.experiment_name,
+            optuna_best_root=args.optuna_best_root, encoders=args.encoders, methods=args.methods,
+        )
+        output_stem = args.output_stem or DEFAULT_OPTUNA_OUTPUT_STEM
+    else:
+        runs = load_zero_shot_runs(
+            tracking_uri=args.tracking_uri, experiment_name=args.experiment_name, campaign=args.campaign
+        )
+        output_stem = args.output_stem or DEFAULT_OUTPUT_STEM
     if args.encoders:
         runs = runs[runs["encoder"].isin(args.encoders)]
     if args.methods:
@@ -217,7 +345,7 @@ def main() -> None:
     if runs.empty:
         raise ValueError(f"No runs found for encoders {args.encoders} and methods {args.methods}")
     differences = paired_differences(runs)
-    outputs = plot_differences(differences, output_stem=args.output_stem)
+    outputs = plot_differences(differences, output_stem=output_stem)
     LOGGER.info("Computed %d paired modality differences", len(differences))
     LOGGER.info("Saved %s", ", ".join(str(path) for path in outputs))
 

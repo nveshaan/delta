@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+from collections.abc import Collection
 from pathlib import Path
 
 import matplotlib
@@ -79,9 +80,18 @@ def _normalise_tracking_uri(tracking_uri: str) -> str:
 
 
 def load_zero_shot_runs(
-    *, tracking_uri: str = DEFAULT_TRACKING_URI, experiment_name: str = "delta", campaign: str = "adhoc"
+    *,
+    tracking_uri: str = DEFAULT_TRACKING_URI,
+    experiment_name: str = "delta",
+    campaign: str = "adhoc",
+    trial_hashes: Collection[str] | None = None,
+    with_trial_hash: bool = False,
 ) -> pd.DataFrame:
-    """Query finished zero-shot metric runs of one campaign from MLflow."""
+    """Query finished zero-shot metric runs of one campaign from MLflow.
+
+    ``trial_hashes`` keeps only the runs that evaluate those distill_mlp trials;
+    ``with_trial_hash`` adds a ``trial_hash`` column.
+    """
     try:
         import mlflow
     except ImportError as error:  # pragma: no cover - depends on environment
@@ -96,6 +106,8 @@ def load_zero_shot_runs(
         filter_string=filter_string,
         output_format="pandas",
     )
+    if trial_hashes is not None and not runs.empty:
+        runs = runs[runs["params.trial_hash"].isin(set(trial_hashes))]
     if runs.empty:
         raise ValueError(
             f"No finished zero-shot runs of campaign {campaign!r} found in MLflow experiment {experiment_name!r}"
@@ -110,6 +122,7 @@ def load_zero_shot_runs(
             "params.comparison": "comparison",
             "params.support_size": "support_size",
             "params.mlp_targets": "mlp_targets",
+            "params.trial_hash": "trial_hash",
             "metrics.auroc": "auroc",
             "metrics.auprc": "auprc",
             "metrics.p_at_n": "p_at_n",
@@ -120,7 +133,7 @@ def load_zero_shot_runs(
     if missing:
         raise ValueError(f"MLflow runs are missing required columns: {', '.join(missing)}")
 
-    selected = renamed[required].copy()
+    selected = renamed[[*required, "trial_hash"] if with_trial_hash else required].copy()
     selected["support_size"] = pd.to_numeric(selected["support_size"], errors="coerce")
     for metric in METRICS:
         selected[metric] = pd.to_numeric(selected[metric], errors="coerce")
