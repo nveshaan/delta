@@ -2,22 +2,22 @@ _target_: methods.laplacianshot_msde.LaplacianShotMSDEPseudolabeler
 
 # LaplacianShot propagation on the query graph.
 mode: label_aware_msde  # no_msde | msde | label_aware_msde
-laplacian_k: 20
-laplacian_lambda: 0.7
+laplacian_k: 5
+laplacian_lambda: 0.35
 laplacian_iterations: 20
 laplacian_tolerance: 1.0e-4
 
 # EM alternation and confidence-gated query movement.
-em_rounds: 5
+em_rounds: 10
 em_convergence_tolerance: 0.01
-gate_sharpness: 1.0
+gate_sharpness: 0.9
 
 # Partial MSDE shift performed in every EM round.
-msde_k: 50
-msde_learning_rate: 0.33
-msde_nbd_sample_count_threshold: 70
+msde_k: 10
+msde_learning_rate: 0.2
+msde_nbd_sample_count_threshold: 50
 msde_shift_threshold: 0.01
-msde_inner_iterations: 3
+msde_inner_iterations: 50
 
 n_classes: null
 confidence: 0.75

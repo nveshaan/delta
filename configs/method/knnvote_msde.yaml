@@ -10,7 +10,7 @@ em_convergence_tolerance: 0.01
 gate_sharpness: 1.0
 
 # MSDE mode: no_msde | msde | label_aware_msde
-mode: label_aware_msde
+mode: no_msde
 msde_k: 50
 msde_learning_rate: 0.33
 msde_nbd_sample_count_threshold: 70
