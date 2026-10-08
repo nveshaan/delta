@@ -1,5 +1,7 @@
 # DELTA
 
+![encoder x method consistency across modalities and support sizes](assets/zero_shot_encoder_method_consistency.png)
+
 ## Setup
 
 ```bash
