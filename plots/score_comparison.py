@@ -42,7 +42,7 @@ LABELS = {
     "kde_density": "KDE density", "knn_dist_50": "k-NN dist (50)", "centroid_dist": "Centroid dist",
     "knn_dist_10": "k-NN dist (10)", "msde_move": "MSDE movement", "local_pca_dim": "Local PCA dim.",
     "twonn_mu": "TwoNN ratio", "graph_degree": "Graph degree", "hubness": "Hubness",
-    "msde_weight": "MSDE weight", "msde_move_unweighted": "MSDE move (unweighted)",
+    "msde_weight": "MSDE weight", "msde_move_unweighted": "MSDE unweighted",
 }
 # Scores drawn in the per-modality dataset radars (a readable subset).
 SELECTED = ("kde_density", "knn_dist_50", "msde_move", "msde_move_unweighted", "local_pca_dim", "msde_weight")
