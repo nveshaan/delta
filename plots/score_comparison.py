@@ -42,13 +42,13 @@ LABELS = {
     "kde_density": "KDE density", "knn_dist_50": "k-NN dist (50)", "centroid_dist": "Centroid dist",
     "knn_dist_10": "k-NN dist (10)", "msde_move": "MSDE movement", "local_pca_dim": "Local PCA dim.",
     "twonn_mu": "TwoNN ratio", "graph_degree": "Graph degree", "hubness": "Hubness",
-    "msde_weight": "MSDE weight",
+    "msde_weight": "MSDE weight", "msde_move_unweighted": "MSDE move (unweighted)",
 }
 # Scores drawn in the per-modality dataset radars (a readable subset).
-SELECTED = ("kde_density", "knn_dist_50", "msde_move", "local_pca_dim", "msde_weight")
+SELECTED = ("kde_density", "knn_dist_50", "msde_move", "msde_move_unweighted", "local_pca_dim", "msde_weight")
 SELECTED_STYLE = {
     "kde_density": (PALETTE["blue_main"], "-"), "knn_dist_50": (PALETTE["teal"], "-"),
-    "msde_move": (PALETTE["red_strong"], "-"), "local_pca_dim": ("#E69F00", "-"),
+    "msde_move": (PALETTE["red_strong"], "-"), "msde_move_unweighted": (PALETTE["violet"], "-"), "local_pca_dim": ("#E69F00", "-"),
     "msde_weight": ("#7F7F7F", "--"),
 }
 RMIN, RMAX = 0.4, 1.0

@@ -13,7 +13,8 @@ Scores (each is one value per sample):
   Structural : centroid_dist, knn_dist_10, knn_dist_50, hubness (10-occurrence),
                local_pca_dim (participation ratio of the 50-NN covariance),
                twonn_mu (log r2/r1), graph_degree (row sum of the fuzzy graph S)
-  MSDE       : msde_move (distance travelled), msde_weight (density weight)
+  MSDE       : msde_move (distance travelled), msde_move_unweighted (same shift with
+               uniform neighbour weights, i.e. no density prior), msde_weight (density weight)
   KDE        : kde_density (Gaussian kernel, bandwidth = median 10-NN distance;
                one dense n x n kernel, cheap at the sample sizes used here)
 
@@ -56,7 +57,7 @@ DEFAULT_OUTPUT = PROJECT_ROOT / "assets" / "score_comparison.csv"
 FAMILY = {
     "centroid_dist": "structural", "knn_dist_10": "structural", "knn_dist_50": "structural",
     "hubness": "structural", "local_pca_dim": "structural", "twonn_mu": "structural",
-    "graph_degree": "structural", "msde_move": "msde", "msde_weight": "msde", "kde_density": "kde",
+    "graph_degree": "structural", "msde_move": "msde", "msde_move_unweighted": "msde", "msde_weight": "msde", "kde_density": "kde",
 }
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -105,13 +106,18 @@ def compute_scores(X: np.ndarray, args, device: str) -> dict[str, np.ndarray]:
             0, S.indices()[0], S.values()).cpu().numpy()
         scores["msde_weight"] = compute_weights_from_similarity_chunked(
             S, n, args.msde_threshold, 0.3, 4, 2048, layout=_sparse_similarity_layout(S)).cpu().numpy()
-        msde = MeanShiftDensityEnhancement(
-            k=min(args.msde_k, n - 1), nbd_sample_count_threshold=args.msde_threshold,
-            learning_rate=args.msde_lr, max_iters_shift=args.msde_iters,
-            shift_threshold=args.msde_shift_threshold, device=device, use_chunking=True,
-            weight_chunk_size=2048, enable_gradients=False,
-        )
-        scores["msde_move"] = msde(Xd)[1].cpu().numpy()
+        for name, weighted in (("msde_move", True), ("msde_move_unweighted", False)):
+            msde = MeanShiftDensityEnhancement(
+                k=min(args.msde_k, n - 1), nbd_sample_count_threshold=args.msde_threshold,
+                learning_rate=args.msde_lr, max_iters_shift=args.msde_iters,
+                shift_threshold=args.msde_shift_threshold, device=device, use_chunking=True,
+                weight_chunk_size=2048, enable_gradients=False,
+            )
+            if not weighted:
+                # Uniform prior: every neighbour counts equally in the barycentre, and the
+                # O(n^2) density-weight computation is skipped.
+                msde._compute_base_weights = lambda X: torch.ones(len(X), device=X.device)
+            scores[name] = msde(Xd)[1].cpu().numpy()
     return {name: np.nan_to_num(value, nan=0.0, posinf=0.0, neginf=0.0) for name, value in scores.items()}
 
 
