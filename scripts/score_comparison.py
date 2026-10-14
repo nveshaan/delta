@@ -90,11 +90,12 @@ def compute_scores(X: np.ndarray, args, device: str) -> dict[str, np.ndarray]:
         "knn_dist_50": sorted_d[:, -1].numpy(),
         "hubness": torch.bincount(nbr[:, :k10].reshape(-1), minlength=n).float().numpy(),
         "local_pca_dim": local_pca_dim(Xt, D),
-        "twonn_mu": torch.log(sorted_d[:, 1] / sorted_d[:, 0].clamp_min(1e-12)).numpy(),
+        "twonn_mu": torch.log(sorted_d[:, 1].clamp_min(1e-12) / sorted_d[:, 0].clamp_min(1e-12)).numpy(),
     }
 
     # KDE: Gaussian kernel, bandwidth = median 10-NN distance, leave-one-out.
-    h = sorted_d[:, k10 - 1].median()
+    # Exact duplicate embeddings give zero distances; keep the bandwidth positive.
+    h = sorted_d[:, k10 - 1].median().clamp_min(1e-6)
     scores["kde_density"] = torch.logsumexp(-(D ** 2) / (2 * h ** 2), dim=1).numpy()
 
     Xd = Xt.to(device)
@@ -111,7 +112,7 @@ def compute_scores(X: np.ndarray, args, device: str) -> dict[str, np.ndarray]:
             weight_chunk_size=2048, enable_gradients=False,
         )
         scores["msde_move"] = msde(Xd)[1].cpu().numpy()
-    return scores
+    return {name: np.nan_to_num(value, nan=0.0, posinf=0.0, neginf=0.0) for name, value in scores.items()}
 
 
 def main() -> None:
