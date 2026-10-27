@@ -5,15 +5,13 @@ drawn, both scores are computed without labels, and the AUROC (anomaly = positiv
 ``separability`` = max(auroc, 1 - auroc).
 
   kde_density : Gaussian kernel, bandwidth = median 10-NN distance, leave-one-out log-density
-  msde_move   : distance travelled under MSDE (src/msde.py)
-  msde_pseudo : second MSDE pass. The msde_move scores are turned into pseudo labels (the
-                ``--pseudo-fraction`` of points that moved most, or least with
-                ``--pseudo-direction lower``, get label 1, the rest 0) and passed as ``labels`` to an
-                MSDE with ``label_mode="zero_label"``, so every point is pulled only towards
-                pseudo-normal points; its distance travelled is the score.
+  msde_stage_1 : distance travelled under the initial, unlabelled MSDE pass.
+  msde_stage_2 .. msde_stage_10 : repeated MSDE passes. At each stage, the previous stage's
+                movement scores are converted to pseudo labels and passed as ``labels`` to an
+                MSDE with ``label_mode="zero_label"``; the distance travelled is the score.
 
-A bar chart of the separability of the three scores for every encoder x dataset is written to
-a multi-page PDF (one page per dataset, one panel per encoder).
+A plot of mean separability against MSDE stage, with KDE as a horizontal baseline, is written
+to a PDF.
 
 Usage::
 
@@ -44,6 +42,9 @@ from msde import MeanShiftDensityEnhancement  # noqa: E402
 
 MODALITIES = ("chest", "fundus", "mri", "oct")
 ENCODERS = ("CLIP", "BiomedCLIP", "MedImageInsight", "MedSigLIP", "UniMedCLIP")
+STAGE_COUNT = 10
+STAGE_SCORES = tuple(f"msde_stage_{stage}" for stage in range(1, STAGE_COUNT + 1))
+LEGACY_SCORE_NAMES = {"msde_move": "msde_stage_1", "msde_pseudo": "msde_stage_2"}
 DEFAULT_OUTPUT = PROJECT_ROOT / "assets" / "score_comparison.csv"
 DEFAULT_PDF = PROJECT_ROOT / "assets" / "score_comparison.pdf"
 
@@ -88,45 +89,48 @@ def compute_scores(X: np.ndarray, args, device: str) -> dict[str, np.ndarray]:
         )
 
     _, movement, _ = make_msde("same_label")(Xt)
-    movement = movement.cpu().numpy()
-    # Pseudo labels: 1 for the pseudo-anomalous fraction of the points, 0 for the rest.
-    order = np.argsort(movement if args.pseudo_direction == "lower" else -movement, kind="stable")
-    pseudo = np.zeros(n, dtype=np.int64)
-    pseudo[order[: max(1, int(round(args.pseudo_fraction * n)))]] = 1
-    _, movement2, _ = make_msde("zero_label")(Xt, labels=torch.from_numpy(pseudo))
-    scores = {"kde_density": kde, "msde_move": movement, "msde_pseudo": movement2.cpu().numpy()}
+    scores = {"kde_density": kde, "msde_stage_1": movement.cpu().numpy()}
+    for stage in range(2, STAGE_COUNT + 1):
+        # Label 1 marks pseudo-anomalies; zero_label makes every point seek only label-0 neighbours.
+        movement_np = movement.cpu().numpy()
+        order = np.argsort(movement_np if args.pseudo_direction == "lower" else -movement_np, kind="stable")
+        pseudo = np.zeros(n, dtype=np.int64)
+        pseudo[order[: max(1, int(round(args.pseudo_fraction * n)))]] = 1
+        _, movement, _ = make_msde("zero_label")(Xt, labels=torch.from_numpy(pseudo))
+        scores[f"msde_stage_{stage}"] = movement.cpu().numpy()
     return {name: np.nan_to_num(v, nan=0.0, posinf=0.0, neginf=0.0) for name, v in scores.items()}
 
 
-SCORE_LABELS = {"kde_density": "KDE", "msde_move": "MSDE", "msde_pseudo": "MSDE pseudo-label"}
-SCORE_COLORS = {"kde_density": "#4C72B0", "msde_move": "#C44E52", "msde_pseudo": "#55A868"}
+SCORE_LABELS = {"kde_density": "KDE", **{name: f"MSDE {stage}" for stage, name in enumerate(STAGE_SCORES, 1)}}
 
 
-def plot_bars(df: pd.DataFrame, path: Path) -> None:
-    """One page per dataset, one bar chart (separability of each score) per encoder."""
+def canonicalize_scores(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df["score"] = df["score"].replace(LEGACY_SCORE_NAMES)
+    return df
+
+
+def plot_stage_curve(df: pd.DataFrame, path: Path) -> None:
+    """Plot mean stage separability with the mean KDE separability as baseline."""
     from matplotlib.backends.backend_pdf import PdfPages
     import matplotlib.pyplot as plt
 
-    scores = [s for s in SCORE_LABELS if s in set(df["score"])]
-    encoders = [e for e in ENCODERS if e in set(df["encoder"])]
+    df = canonicalize_scores(df)
+    staged = df[df["score"].isin(STAGE_SCORES)].copy()
+    staged["stage"] = staged["score"].str.rsplit("_", n=1).str[-1].astype(int)
+    stage_means = staged.groupby("stage")["separability"].mean()
+    kde_mean = df.loc[df["score"] == "kde_density", "separability"].mean()
     with PdfPages(path) as pdf:
-        for (modality, dataset), group in df.groupby(["modality", "dataset"], sort=False):
-            fig, axes = plt.subplots(1, len(encoders), figsize=(3 * len(encoders), 3.2), sharey=True, squeeze=False)
-            for ax, encoder in zip(axes[0], encoders):
-                sub = group[group["encoder"] == encoder].set_index("score")
-                values = [sub["separability"].get(s, np.nan) for s in scores]
-                ax.bar(range(len(scores)), values, color=[SCORE_COLORS[s] for s in scores])
-                for i, v in enumerate(values):
-                    ax.text(i, v + 0.01, f"{v:.2f}", ha="center", fontsize=7)
-                ax.axhline(0.5, color="k", ls="--", lw=0.8)
-                ax.set_ylim(0.4, 1.05)
-                ax.set_xticks(range(len(scores)), [SCORE_LABELS[s] for s in scores], rotation=30, ha="right", fontsize=7)
-                ax.set_title(encoder, fontsize=9)
-            axes[0][0].set_ylabel("max(AUROC, 1 - AUROC)")
-            fig.suptitle(f"{modality} / {dataset}", fontsize=11)
-            fig.tight_layout()
-            pdf.savefig(fig)
-            plt.close(fig)
+        fig, ax = plt.subplots(figsize=(7, 4.5))
+        ax.plot(stage_means.index, stage_means.values, marker="o", color="#C44E52", label="MSDE")
+        ax.axhline(kde_mean, color="#4C72B0", ls="--", label=f"KDE ({kde_mean:.3f})")
+        ax.set(xlabel="MSDE stage", ylabel="Mean separability", xticks=range(1, STAGE_COUNT + 1),
+               ylim=(0.4, 1.0), title="Mean separability by MSDE stage")
+        ax.grid(axis="y", alpha=0.25)
+        ax.legend()
+        fig.tight_layout()
+        pdf.savefig(fig)
+        plt.close(fig)
 
 
 def main() -> None:
@@ -138,7 +142,7 @@ def main() -> None:
     parser.add_argument("--seeds", type=int, default=3)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--pdf", type=Path, default=DEFAULT_PDF, help="bar chart of every encoder x dataset")
+    parser.add_argument("--pdf", type=Path, default=DEFAULT_PDF, help="stage separability plot")
     parser.add_argument("--plot-only", action="store_true", help="only redraw the PDF from --output")
     parser.add_argument("--pseudo-fraction", type=float, default=0.5,
                         help="fraction of points labelled pseudo-anomalous (1) from the first MSDE scores")
@@ -156,14 +160,24 @@ def main() -> None:
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
     args.output.parent.mkdir(parents=True, exist_ok=True)
+    cached = canonicalize_scores(pd.read_csv(args.output)) if args.output.exists() else pd.DataFrame()
     if args.plot_only:
-        plot_bars(pd.read_csv(args.output), args.pdf)
+        plot_stage_curve(cached, args.pdf)
         return
     jobs = [j for j in iter_jobs(args.modalities, args.encoders) if args.datasets is None or j[1] in args.datasets]
     LOGGER.info("%d jobs, device=%s", len(jobs), device)
 
     rows = []
     for number, (modality, dataset, encoder, path, meta) in enumerate(jobs, 1):
+        cached_job = cached[
+            (cached["modality"] == modality) & (cached["dataset"] == dataset) &
+            (cached["encoder"] == encoder)
+        ] if not cached.empty else pd.DataFrame()
+        required_scores = {"kde_density", *STAGE_SCORES}
+        if set(cached_job["score"]) >= required_scores:
+            rows.extend(cached_job[cached_job["score"].isin(required_scores)].to_dict("records"))
+            LOGGER.info("[%d/%d] %s/%s/%s  cached", number, len(jobs), modality, dataset, encoder)
+            continue
         try:
             ds = SingleEmbedsDataset(
                 path, dataset, encoder=encoder, as_tensor=False,
@@ -184,11 +198,13 @@ def main() -> None:
                 per_seed.setdefault(name, []).append(float(roc_auc_score(y, value)))
         for name, values in per_seed.items():
             auroc = float(np.mean(values))
-            rows.append({
+            row = {
                 "modality": modality, "dataset": dataset, "encoder": encoder, "score": name,
                 "n_per_class": len(normal), "auroc": auroc, "auroc_std": float(np.std(values)),
                 "separability": max(auroc, 1 - auroc),
-            })
+            }
+            cached_row = cached_job[cached_job["score"] == name]
+            rows.append(cached_row.iloc[-1].to_dict() if not cached_row.empty else row)
         pd.DataFrame(rows).to_csv(args.output, index=False)
         LOGGER.info("[%d/%d] %s/%s/%s  %.0fs", number, len(jobs), modality, dataset, encoder, time.time() - start)
 
@@ -196,7 +212,7 @@ def main() -> None:
     LOGGER.info("mean separability by score:\n%s", df.groupby("score")["separability"].mean().round(4))
     LOGGER.info("by encoder:\n%s", df.pivot_table(index="encoder", columns="score", values="separability").round(4))
     LOGGER.info("wrote %s (%d rows)", args.output, len(df))
-    plot_bars(df, args.pdf)
+    plot_stage_curve(df, args.pdf)
     LOGGER.info("wrote %s", args.pdf)
 
 
