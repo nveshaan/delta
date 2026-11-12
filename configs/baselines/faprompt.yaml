@@ -1,0 +1,16 @@
+name: FAPrompt
+_target_: baselines.faprompt.FAPrompt
+repo_url: https://github.com/mala-lab/FAPrompt.git
+repo_dir: .third_party/FAPrompt
+checkpoint: mvtec   # key of `checkpoints` (Google Drive file ids); no medical-trained checkpoint is released
+checkpoints:
+  mvtec: 1XDXtx-17JCIT-EAIpS_R_C2T2S03bzdD
+  visa: 1MLZ7OPcO3JawLYG31RZLxNUbtFXqzrsC
+  medical: null
+device: auto
+image_size: 518
+features_list: [6, 12, 18, 24]
+depth: 9
+n_ctx: 12
+t_n_ctx: 4
+seed: 111

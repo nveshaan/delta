@@ -1,0 +1,17 @@
+name: AnomalyCLIP
+_target_: baselines.anomalyclip.AnomalyCLIP
+repo_url: https://github.com/zqhang/AnomalyCLIP.git
+repo_dir: .third_party/AnomalyCLIP
+checkpoint: mvtec   # key of `checkpoints`; no medical-trained checkpoint is released
+checkpoints:
+  mvtec: checkpoints/9_12_4_multiscale/epoch_15.pth
+  visa: checkpoints/9_12_4_multiscale_visa/epoch_15.pth
+  medical: null
+device: auto
+image_size: 518
+features_list: [6, 12, 18, 24]
+depth: 9
+n_ctx: 12
+t_n_ctx: 4
+batch_size: 16
+seed: 111

@@ -1,0 +1,35 @@
+# Settings for scripts/run_baseline.py: an inference-only baseline (configs/baselines/<method>.yaml) on raw images.
+defaults:
+  - _self_
+  - baselines: anomalyclip   # not a key of this file: `baselines` is the config group, pick it with baselines=adaclip
+  - override hydra/job_logging: disabled
+  - override hydra/hydra_logging: disabled
+
+hydra:
+  run:
+    dir: .
+  sweep:
+    dir: .
+    subdir: ""
+  output_subdir: null
+  job:
+    chdir: false
+
+data_root: data   # embeddings dir; only labels.npy is read, to select the same samples as run_msde.py
+raw_data_root: /Volumes/Eshaan APFS/data   # root of the raw images, see configs/datasets/raw_<modality>.yaml
+modality_name: chest  # not "modality": that name is the configs/modality config group
+dataset: null   # null runs every dataset listed in configs/modality/<modality_name>.yaml
+seed: 42
+cap: 10000
+load_chunk: 256   # images held in memory at once
+
+# Class name AdaCLIP prompts with, per modality.
+class_names:
+  chest: chest X-ray
+  fundus: retinal fundus image
+  mri: brain MRI
+  oct: retinal OCT
+
+mlflow:
+  tracking_uri: sqlite:///experiments/mlflow.db
+  experiment_name: baseline

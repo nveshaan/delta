@@ -1,0 +1,22 @@
+name: AdaCLIP
+_target_: baselines.adaclip.AdaCLIP
+repo_url: https://github.com/caoyunkang/AdaCLIP.git
+repo_dir: .third_party/AdaCLIP
+weights_repo: Caoyunkang/AdaCLIP   # Hugging Face space that hosts the released weights
+# All released weights were trained on industrial + medical data; `all` saw the most medical datasets.
+checkpoint: all
+checkpoints:
+  mvtec_colondb: weights/pretrained_mvtec_colondb.pth
+  visa_clinicdb: weights/pretrained_visa_clinicdb.pth
+  all: weights/pretrained_all.pth
+class_name: object   # AdaCLIP prompts with a class name; overridden per modality by scripts/run_baseline.py
+device: auto
+image_size: 518
+backbone: ViT-L-14-336
+prompting_depth: 4
+prompting_length: 5
+prompting_type: SD
+prompting_branch: VL
+use_hsf: true
+k_clusters: 20
+batch_size: 16
