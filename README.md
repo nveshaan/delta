@@ -87,6 +87,32 @@ The generated files are written to
 > `hf auth login`
 > (or set the `HF_TOKEN` environment variable).
 
+## Run MSDE
+
+`scripts/run_msde.py` runs Mean Shift Density Enhancement on the embeddings of an encoder, using the settings in `configs/msde.yaml`. The movement of each point is its anomaly score (label 0 is normal, any other label is anomalous).
+
+```bash
+# One dataset.
+uv run python scripts/run_msde.py modality=chest encoder=CLIP dataset=VinCXR
+
+# Every dataset listed in configs/modality/<modality>.yaml (one MLflow run each).
+uv run python scripts/run_msde.py modality=chest encoder=CLIP dataset=null
+
+# Three runs; runs after the first use pseudo labels from the previous one with label_mode=zero_label.
+uv run python scripts/run_msde.py pseudo_labels.rounds=3 pseudo_labels.anomaly_fraction=0.2
+
+# Override MSDE hyperparameters.
+uv run python scripts/run_msde.py model.k=20 model.learning_rate=0.1
+```
+
+The density, score, stability and weight used are selected by the config groups in `configs/{density,score,stability,weight}/`.
+
+Everything is logged with MLflow to `experiments/mlflow.db` (artifacts in `experiments/artifacts`), view it with `uv run mlflow ui --backend-store-uri sqlite:///experiments/mlflow.db`:
+
+- **Params:** dataset, modality, encoder, density/score/stability/weight names, seed, distance, sample counts and the model hyperparameters.
+- **Metrics:** AUROC, AUPRC and P@n (n = number of anomalies), each also computed on the negated score (`*_flipped`), since the direction of the movement score depends on the encoder. For datasets with several anomaly labels, the same metrics are logged per subtype as `subtype_<label>/<metric>` (each subtype against the normal samples). With several rounds, metrics are logged per round (`step`).
+- **Artifacts:** the resolved config and the density, score, stability and weight configs under `configs/`.
+
 ## Acknowledgements
 
 - Kar, P., Bordoloi, R., Wolkenhauer, O., & Bej, S. (2026). Anomaly Detection via Mean Shift Density Enhancement. arXiv:2602.03293. https://doi.org/10.48550/arXiv.2602.03293

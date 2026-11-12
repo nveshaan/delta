@@ -1,0 +1,6 @@
+name: NeighborScore
+fn:
+  _target_: src.msde.NeighborScore
+  distance_strength: ${model.distance_strength}
+  density_strength: ${model.density_strength}
+  stability_strength: ${model.stability_strength}

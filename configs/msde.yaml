@@ -1,0 +1,58 @@
+# Settings for scripts/run_msde.py: MSDE on the embeddings of one encoder.
+defaults:
+  - _self_
+  - density: default
+  - score: default
+  - stability: default
+  - weight: default
+  - override hydra/job_logging: disabled
+  - override hydra/hydra_logging: disabled
+
+hydra:
+  run:
+    dir: .
+  sweep:
+    dir: .
+    subdir: ""
+  output_subdir: null
+  job:
+    chdir: false
+
+data_root: data
+modality: chest
+encoder: CLIP
+dataset: null   # null runs every dataset listed in configs/modality/<modality>.yaml
+seed: 42
+cap: 10000
+dist: euclidean
+
+# Extra MSDE runs. Round 0 runs without labels; every later round re-runs on the original embeddings with
+# pseudo labels from the previous round's score (top `anomaly_fraction` by score = 1, rest = 0) and
+# label_mode=zero_label, so points are only pulled towards presumed-normal neighbours.
+pseudo_labels:
+  rounds: 1   # total number of MSDE runs; 1 = a single run, no pseudo labels
+  anomaly_fraction: 0.2
+
+model:
+  _target_: src.msde.MeanShiftDensityEnhancement
+  k: 50
+  nbd_sample_count_threshold: 30
+  n_neighbors: 15
+  n_epochs: 200
+  max_iters_weight_count: 4
+  satisfiability_proportion: 0.3
+  learning_rate: 0.3
+  density_strength: 1.0
+  stability_strength: 1.0
+  distance_strength: 1.0
+  h: auto
+  recompute_neighbors: 0
+  max_iters_shift: 1000
+  shift_threshold: 1.0e-4
+  spherical_centering: true
+  label_mode: zero_label
+  chunk_size: 1024
+
+mlflow:
+  tracking_uri: sqlite:///experiments/mlflow.db
+  experiment_name: msde
