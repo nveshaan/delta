@@ -1,6 +1,6 @@
 _target_: datasets.embeds.FundusEmbedsDataset
 modality: fundus
-data_root: data/fundus
+data_root: ${oc.env:DELTA_DATA,data}/fundus
 encoder: ${encoder}
 seed: ${seed}
 cap: true

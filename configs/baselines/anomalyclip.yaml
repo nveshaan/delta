@@ -1,7 +1,7 @@
 name: AnomalyCLIP
 _target_: baselines.anomalyclip.AnomalyCLIP
 repo_url: https://github.com/zqhang/AnomalyCLIP.git
-repo_dir: .third_party/AnomalyCLIP
+repo_dir: ${oc.env:DELTA_THIRD_PARTY,.third_party}/AnomalyCLIP
 checkpoint: mvtec   # key of `checkpoints`; no medical-trained checkpoint is released
 checkpoints:
   mvtec: checkpoints/9_12_4_multiscale/epoch_15.pth

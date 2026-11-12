@@ -1,7 +1,7 @@
 name: FAPrompt
 _target_: baselines.faprompt.FAPrompt
 repo_url: https://github.com/mala-lab/FAPrompt.git
-repo_dir: .third_party/FAPrompt
+repo_dir: ${oc.env:DELTA_THIRD_PARTY,.third_party}/FAPrompt
 checkpoint: mvtec   # key of `checkpoints` (Google Drive file ids); no medical-trained checkpoint is released
 checkpoints:
   mvtec: 1XDXtx-17JCIT-EAIpS_R_C2T2S03bzdD

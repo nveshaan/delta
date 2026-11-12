@@ -1,6 +1,6 @@
 _target_: datasets.embeds.ChestEmbedsDataset
 modality: chest
-data_root: data/chest
+data_root: ${oc.env:DELTA_DATA,data}/chest
 encoder: ${encoder}
 seed: ${seed}
 cap: true

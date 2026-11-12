@@ -1,5 +1,5 @@
 _target_: datasets.raw.ChestRawDataset
-root: /Volumes/Eshaan APFS/data
+root: ${oc.env:DELTA_RAW_DATA,/Volumes/Eshaan APFS/delta/dataset}
 modality_root: ${data.chest.root}/chest
 seed: 42
 sample_strategy: python_sorted

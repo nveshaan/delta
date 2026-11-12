@@ -1,5 +1,5 @@
 _target_: datasets.raw.OCTRawDataset
-root: /Volumes/Eshaan APFS/data
+root: ${oc.env:DELTA_RAW_DATA,/Volumes/Eshaan APFS/delta/dataset}
 modality_root: ${data.oct.root}/oct
 seed: 42
 sample_strategy: numpy_sorted

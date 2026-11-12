@@ -1,5 +1,5 @@
 _target_: datasets.raw.FundusRawDataset
-root: /Volumes/Eshaan APFS/data
+root: ${oc.env:DELTA_RAW_DATA,/Volumes/Eshaan APFS/delta/dataset}
 modality_root: ${data.fundus.root}/fundus
 seed: 42
 sample_strategy: python_ordered

@@ -15,8 +15,8 @@ hydra:
   job:
     chdir: false
 
-data_root: data   # embeddings dir; only labels.npy is read, to select the same samples as run_msde.py
-raw_data_root: /Volumes/Eshaan APFS/delta/dataset   # root of the raw images, see configs/datasets/raw_<modality>.yaml
+data_root: ${oc.env:DELTA_DATA,data}   # embeddings dir; only labels.npy is read, to select the same samples as run_msde.py
+raw_data_root: ${oc.env:DELTA_RAW_DATA,/Volumes/Eshaan APFS/delta/dataset}   # root of the raw images, see configs/datasets/raw_<modality>.yaml
 modality_name: chest  # not "modality": that name is the configs/modality config group
 dataset: null   # null runs every dataset listed in configs/modality/<modality_name>.yaml
 seed: 42

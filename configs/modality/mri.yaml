@@ -1,6 +1,6 @@
 _target_: datasets.embeds.MRIEmbedsDataset
 modality: mri
-data_root: data/mri
+data_root: ${oc.env:DELTA_DATA,data}/mri
 encoder: ${encoder}
 seed: ${seed}
 cap: true

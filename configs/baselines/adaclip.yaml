@@ -1,7 +1,7 @@
 name: AdaCLIP
 _target_: baselines.adaclip.AdaCLIP
 repo_url: https://github.com/caoyunkang/AdaCLIP.git
-repo_dir: .third_party/AdaCLIP
+repo_dir: ${oc.env:DELTA_THIRD_PARTY,.third_party}/AdaCLIP
 weights_repo: Caoyunkang/AdaCLIP   # Hugging Face space that hosts the released weights
 # All released weights were trained on industrial + medical data; `all` saw the most medical datasets.
 checkpoint: all

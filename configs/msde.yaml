@@ -18,7 +18,7 @@ hydra:
   job:
     chdir: false
 
-data_root: data
+data_root: ${oc.env:DELTA_DATA,data}
 modality_name: chest  # not "modality": that name is the configs/modality config group, which the CLI cannot override as a value
 encoder: CLIP
 dataset: null   # null runs every dataset listed in configs/modality/<modality_name>.yaml

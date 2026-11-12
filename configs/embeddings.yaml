@@ -18,7 +18,7 @@ hydra:
   job:
     chdir: false
 
-output_root: data
+output_root: ${oc.env:DELTA_DATA,data}
 modalities: [chest, fundus, mri, oct]
 modality_name: null   # not "modality": that name is the configs/modality config group
 encoder: null
@@ -51,7 +51,7 @@ encoders:
 
   UniMedCLIP:
     git_repository: https://github.com/mbzuai-oryx/UniMed-CLIP.git
-    repository_dir: .third_party/UniMed-CLIP
+    repository_dir: ${oc.env:DELTA_THIRD_PARTY,.third_party}/UniMed-CLIP
     model_name: ViT-B-16-quickgelu
     text_encoder_name: microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract
     hf_repo: UzairK/unimed-clip-vit-b16

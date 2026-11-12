@@ -1,6 +1,6 @@
 _target_: datasets.embeds.OCTEmbedsDataset
 modality: oct
-data_root: data/oct
+data_root: ${oc.env:DELTA_DATA,data}/oct
 encoder: ${encoder}
 seed: ${seed}
 cap: true
