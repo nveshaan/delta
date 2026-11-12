@@ -71,10 +71,10 @@ The generated files are written to
 
 ```bash
 # One dataset.
-uv run python scripts/run_msde.py modality=chest encoder=CLIP dataset=VinCXR
+uv run python scripts/run_msde.py modality_name=chest encoder=CLIP dataset=VinCXR
 
-# Every dataset listed in configs/modality/<modality>.yaml (one MLflow run each).
-uv run python scripts/run_msde.py modality=chest encoder=CLIP dataset=null
+# Every dataset listed in configs/modality/<modality_name>.yaml (one MLflow run each).
+uv run python scripts/run_msde.py modality_name=chest encoder=CLIP dataset=null
 
 # Three runs; runs after the first use pseudo labels from the previous one with label_mode=zero_label.
 uv run python scripts/run_msde.py pseudo_labels.rounds=3 pseudo_labels.anomaly_fraction=0.2

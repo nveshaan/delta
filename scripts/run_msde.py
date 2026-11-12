@@ -1,6 +1,6 @@
 """Run MSDE on the embeddings of a dataset and log the results to MLflow.
 
-Example: python scripts/run_msde.py modality=chest encoder=CLIP dataset=VinCXR
+Example: python scripts/run_msde.py modality_name=chest encoder=CLIP dataset=VinCXR
 """
 import argparse
 import sys
@@ -63,7 +63,7 @@ def pseudo_labels(score: np.ndarray, anomaly_fraction: float) -> np.ndarray:
 def dataset_names(cfg: DictConfig) -> list[str]:
     if cfg.dataset is not None:
         return [cfg.dataset]
-    modality_cfg = OmegaConf.load(PROJECT_ROOT / "configs" / "modality" / f"{cfg.modality}.yaml")
+    modality_cfg = OmegaConf.load(PROJECT_ROOT / "configs" / "modality" / f"{cfg.modality_name}.yaml")
     return list(modality_cfg.datasets)
 
 
@@ -71,7 +71,7 @@ def run_dataset(cfg: DictConfig, name: str) -> None:
     root = Path(cfg.data_root)
     root = root if root.is_absolute() else PROJECT_ROOT / root
     data = SingleEmbedsDataset(
-        root / cfg.modality / name, encoder=cfg.encoder, cap=cfg.cap, seed=cfg.seed, as_tensor=False
+        root / cfg.modality_name / name, encoder=cfg.encoder, cap=cfg.cap, seed=cfg.seed, as_tensor=False
     )
     X = torch.from_numpy(np.asarray(data.embeddings, dtype=np.float32))
     labels = np.asarray(data.labels)
@@ -118,10 +118,10 @@ def run_dataset(cfg: DictConfig, name: str) -> None:
         # The next round pulls points towards the presumed-normal ones (label 0).
         run_labels = pseudo_labels(score, cfg.pseudo_labels.anomaly_fraction)
 
-    with mlflow.start_run(run_name=f"{cfg.modality}-{name}-{cfg.encoder}"):
+    with mlflow.start_run(run_name=f"{cfg.modality_name}-{name}-{cfg.encoder}"):
         mlflow.log_params({
             "dataset": name,
-            "modality": cfg.modality,
+            "modality": cfg.modality_name,
             "encoder": cfg.encoder,
             "seed": cfg.seed,
             "dist": cfg.dist,
@@ -140,7 +140,7 @@ def run_dataset(cfg: DictConfig, name: str) -> None:
         for comp in COMPONENTS:
             mlflow.log_dict(OmegaConf.to_container(cfg[comp], resolve=True), f"configs/{comp}.yaml")
     for r, metrics in enumerate(rounds):
-        print(f"{cfg.modality}/{name}/{cfg.encoder} round {r}: "
+        print(f"{cfg.modality_name}/{name}/{cfg.encoder} round {r}: "
               + " ".join(f"{k}={v:.4f}" for k, v in metrics.items() if "/" not in k))
         for c, count in subtype_counts.items():
             print(f"  subtype {c} (n={count}): auroc={metrics[f'subtype_{c}/auroc']:.4f} "
