@@ -19,4 +19,4 @@ prompting_type: SD
 prompting_branch: VL
 use_hsf: true
 k_clusters: 20
-batch_size: 16
+batch_size: 1   # AdaCLIP's text encoder does not support batches (TODO in the authors' code)
