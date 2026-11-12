@@ -2,6 +2,7 @@
 import os
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 import torch
@@ -22,6 +23,9 @@ def choose_device(name: str = "auto") -> str:
 
 def prepare_repo(url: str, repo_dir: str) -> Path:
     """Clone the authors' repo into `repo_dir` if missing and put it first on `sys.path`."""
+    if "pkg_resources" not in sys.modules:  # the repos do `from pkg_resources import packaging`, gone from new setuptools
+        import packaging.version
+        sys.modules["pkg_resources"] = types.SimpleNamespace(packaging=packaging)
     path = Path(repo_dir)
     path = path if path.is_absolute() else PROJECT_ROOT / path
     if not path.is_dir():
