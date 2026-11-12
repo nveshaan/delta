@@ -91,6 +91,21 @@ Everything is logged with MLflow to `experiments/mlflow.db` (artifacts in `exper
 - **Metrics:** AUROC, AUPRC and P@n (n = number of anomalies), each also computed on the negated score (`*_flipped`), since the direction of the movement score depends on the encoder. For datasets with several anomaly labels, the same metrics are logged per subtype as `subtype_<label>/<metric>` (each subtype against the normal samples). With several rounds, metrics are logged per round (`step`).
 - **Artifacts:** the resolved config and the density, score, stability and weight configs under `configs/`.
 
+## Run baselines
+
+`scripts/run_baseline.py` runs an inference-only (zero-shot) baseline on the **raw images** of a dataset, on the same samples as `run_msde.py` (same labels and cap). The method is a config in `configs/baselines/`: `anomalyclip`, `faprompt` or `adaclip`. Their official repos are cloned to `.third_party/` and the released checkpoints downloaded on first use. Raw images are read from `raw_data_root` (set in `configs/baseline.yaml`), so run it where they are.
+
+```bash
+uv run python scripts/run_baseline.py baselines=adaclip modality_name=chest dataset=VinCXR
+
+# Every dataset of a modality, another released checkpoint.
+uv run python scripts/run_baseline.py baselines=anomalyclip baselines.checkpoint=visa modality_name=oct dataset=null
+```
+
+Checkpoints are chosen with `baselines.checkpoint`; selecting one the authors did not release (e.g. `medical` for AnomalyCLIP and FAPrompt) fails with the list of available ones. AdaCLIP's released weights were all trained on industrial and medical data (`mvtec_colondb`, `visa_clinicdb`, `all`).
+
+Runs go to the `baseline` MLflow experiment with the same metrics as MSDE (including `*_flipped` and per-subtype). Params are only dataset, modality, method, seed and sample counts; the checkpoint is a tag, and the resolved configs are stored under `configs/` as artifacts.
+
 ## Acknowledgements
 
 - Kar, P., Bordoloi, R., Wolkenhauer, O., & Bej, S. (2026). Anomaly Detection via Mean Shift Density Enhancement. arXiv:2602.03293. https://doi.org/10.48550/arXiv.2602.03293
