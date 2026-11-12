@@ -356,7 +356,7 @@ def _pooled_figure(modality: str, encoder: str, projections, seed: int, backend:
 
 
 def _dataset_figure(modality: str, encoder: str, projection, seed: int, backend: str = "mlx-vis"):
-    name, labels, coords, tag = projection
+    name, labels, coords = projection
     colors_by_label = _label_colors(labels)
     colors = np.asarray([colors_by_label[int(label)] for label in labels])
     figure = plt.figure(figsize=(8.5, 7.6))
@@ -372,7 +372,7 @@ def _dataset_figure(modality: str, encoder: str, projection, seed: int, backend:
     )
     axis.set_title(
         f"{MODALITY_TITLES[modality]} · {encoder} · {_view_label(backend)}\n"
-        f"{name} [{tag}] (n={len(coords):,})"
+        f"{name} (n={len(coords):,})"
     )
     figure.tight_layout()
     return figure, [axis]
@@ -459,17 +459,13 @@ def _save_coordinate_cache(
         dataset=np.concatenate(
             [np.full(len(projection[2]), projection[0]) for projection in pooled_projections]
         ),
-        tag=np.concatenate(
-            [np.full(len(projection[2]), projection[3]) for projection in pooled_projections]
-        ),
     )
-    for name, labels, coords, tag in dataset_projections:
+    for name, labels, coords in dataset_projections:
         np.savez_compressed(
             output_dir / f"{_safe_name(name)}.npz",
             coords=coords,
             labels=labels,
             dataset=np.full(len(coords), name),
-            tag=np.full(len(coords), tag),
         )
 
 
@@ -599,15 +595,15 @@ def _save_html(
     for column in (1, 2):
         figure.add_trace(_plotly_surface(full_sphere), row=1, col=column)
     for index, (projection, color) in enumerate(zip(pooled_projections, dataset_colors)):
-        name, labels, coords, tag = projection
+        name, labels, coords = projection
         count = len(coords)
-        hover = [f"dataset: {name} [{tag}]<br>label: {label}" for label in labels]
+        hover = [f"dataset: {name}<br>label: {label}" for label in labels]
         figure.add_trace(
             _plotly_points(
                 coords,
                 np.full(count, color),
                 hover,
-                f"{name} [{tag}]",
+                f"{name}",
                 legendgroup="dataset",
                 legendgrouptitle="By dataset" if index == 0 else None,
             ),
@@ -649,7 +645,7 @@ def _save_html(
     )
     written.append(pooled_path)
 
-    for name, labels, coords, tag in dataset_projections:
+    for name, labels, coords in dataset_projections:
         colors_by_label = _label_colors(labels)
         traces = [_plotly_surface(full_sphere)]
         for index, (label, color) in enumerate(sorted(colors_by_label.items())):
@@ -669,7 +665,7 @@ def _save_html(
         figure = go.Figure(traces)
         figure.update_layout(
             **_plotly_layout(
-                f"{MODALITY_TITLES[modality]} · {encoder} · {_view_label(backend)}<br>{name} [{tag}]",
+                f"{MODALITY_TITLES[modality]} · {encoder} · {_view_label(backend)}<br>{name}",
                 full_sphere,
             )
         )
@@ -710,9 +706,8 @@ def plot_modality_encoder(
         if len(embeds) < 3:
             LOGGER.warning("%s/%s: only %d samples, skipped", modality, name, len(embeds))
             continue
-        tag = str(meta.get("tag", "train"))
         LOGGER.info("%s/%s/%s: fitting %d samples", modality, encoder, name, len(embeds))
-        projections.append((name, labels, embeds, tag))
+        projections.append((name, labels, embeds))
 
     if not projections:
         LOGGER.warning("%s/%s: no datasets with embeddings, nothing written", modality, encoder)
@@ -722,14 +717,14 @@ def plot_modality_encoder(
     pooled_coords = _fit_projection(pooled_embeds, seed, n_neighbors, n_epochs, backend)
     pooled_projections = []
     offset = 0
-    for name, labels, embeds, tag in projections:
+    for name, labels, embeds in projections:
         end = offset + len(embeds)
-        pooled_projections.append((name, labels, pooled_coords[offset:end], tag))
+        pooled_projections.append((name, labels, pooled_coords[offset:end]))
         offset = end
 
     dataset_projections = []
-    for name, labels, embeds, tag in projections:
-        dataset_projections.append((name, labels, _fit_projection(embeds, seed, n_neighbors, n_epochs, backend), tag))
+    for name, labels, embeds in projections:
+        dataset_projections.append((name, labels, _fit_projection(embeds, seed, n_neighbors, n_epochs, backend)))
 
     stem = f"{encoder}_umap" if backend == "mlx-vis" else f"{encoder}_umap_{backend.replace('-', '_')}"
     output_path = output_root / modality / f"{stem}.pdf"

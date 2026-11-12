@@ -81,7 +81,7 @@ def _source_embeddings(
         embeds, labels = embeds[keep], labels[keep]
     if indices is not None:
         embeds, labels = embeds[indices], labels[indices]
-    return embeds, labels, str(meta.get("tag", "train"))
+    return embeds, labels
 
 
 def _cache_dir(modality: str, encoder: str, backend: str) -> Path:
@@ -114,40 +114,38 @@ def _load_selection(
         loaded = []
         for name, meta in config["datasets"].items():
             try:
-                X, y, tag = _source_embeddings(modality, encoder, name)
+                X, y = _source_embeddings(modality, encoder, name)
             except FileNotFoundError:
                 continue
-            loaded.append((name, X, y, tag))
+            loaded.append((name, X, y))
         if not loaded:
             raise FileNotFoundError(f"No source embeddings found for {modality}/{encoder}")
-        quotas = [max(1, max_points * len(y) // sum(len(item[2]) for item in loaded)) for _, _, y, _ in loaded]
+        quotas = [max(1, max_points * len(y) // sum(len(item[2]) for item in loaded)) for _, _, y in loaded]
         while sum(quotas) > max_points:
             largest = int(np.argmax(quotas))
             if quotas[largest] <= 1:
                 break
             quotas[largest] -= 1
-        embeds, labels, datasets, tags, coordinates = [], [], [], [], []
+        embeds, labels, datasets, coordinates = [], [], [], []
         offset = 0
-        for (name, X, y, tag), quota in zip(loaded, quotas):
+        for (name, X, y), quota in zip(loaded, quotas):
             local = _sample_indices(len(y), quota, rng)
             embeds.append(np.asarray(X[local], dtype=np.float32))
             labels.append(y[local])
             coordinates.append(pooled["coords"][offset + local])
             datasets.extend([name] * len(local))
-            tags.extend([tag] * len(local))
             offset += len(y)
         return (
             np.concatenate(embeds),
             np.concatenate(labels),
             np.concatenate(coordinates),
             np.asarray(datasets),
-            np.asarray(tags),
         )
 
     cache = directory / f"{_safe_name(dataset)}.npz"
     if not cache.is_file():
         raise FileNotFoundError(f"Missing UMAP cache {cache}; run plots/embedding_umap.py first")
-    X, y, tag = _source_embeddings(modality, encoder, dataset)
+    X, y = _source_embeddings(modality, encoder, dataset)
     local = _sample_indices(len(y), max_points, rng)
     cached = np.load(cache, allow_pickle=False)
     return (
@@ -155,7 +153,6 @@ def _load_selection(
         y[local],
         cached["coords"][local],
         np.full(len(local), dataset),
-        np.full(len(local), tag),
     )
 
 
@@ -319,7 +316,7 @@ def create_html(
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
 
-    X, labels, coords, datasets, tags = _load_selection(modality, encoder, dataset, backend)
+    X, labels, coords, datasets = _load_selection(modality, encoder, dataset, backend)
     metrics = _point_metrics(X, labels, 42, device)
     if metric not in metrics:
         raise ValueError(f"Metric {metric!r} is unavailable; choose from {sorted(metrics)}")
@@ -336,7 +333,7 @@ def create_html(
         mapping = {name: colors[i] for i, name in enumerate(np.unique(datasets))}
         color_values = np.asarray([mapping[name] for name in datasets])
         legend_names = list(np.unique(datasets))
-        hover = [f"dataset: {d} [{t}]<br>subtype: {y}" for d, t, y in zip(datasets, tags, labels)]
+        hover = [f"dataset: {d}<br>subtype: {y}" for d, y in zip(datasets, labels)]
     else:
         label_colors = _label_colors(labels)
         color_values = np.asarray([label_colors[int(label)] for label in labels])
@@ -399,7 +396,7 @@ def _dashboard_entry(
     device: str,
     max_points: int,
 ) -> dict:
-    X, labels, coords, datasets, tags = _load_selection(
+    X, labels, coords, datasets = _load_selection(
         modality, encoder, dataset, backend, max_points=max_points
     )
     metric_values = _metrics_per_dataset(X, labels, datasets, device)
@@ -410,7 +407,6 @@ def _dashboard_entry(
         "coords": np.asarray(coords, dtype=np.float32).tolist(),
         "labels": np.asarray(labels).tolist(),
         "datasets": np.asarray(datasets).tolist(),
-        "tags": np.asarray(tags).tolist(),
         "metrics": {name: values.tolist() for name, values in metric_values.items()},
     }
 
@@ -555,7 +551,7 @@ function updatePlots() {{
   groupNames.forEach((group, index) => {{
     const mask = groupValues.map((value, i) => value === group ? i : -1).filter(i => i >= 0);
     const hover = mask.map(i => d.dataset[i] === 'pooled'
-      ? `dataset: ${{d.datasets[i]}} [${{d.tags[i]}}]<br>subtype: ${{d.labels[i]}}`
+      ? `dataset: ${{d.datasets[i]}}<br>subtype: ${{d.labels[i]}}`
       : `subtype: ${{d.labels[i]}}`);
     groupTraces.push(pointTrace(d, mask, colors[index % colors.length],
       datasetSelect.value === 'pooled' ? group : `subtype ${{group}}`, hover, false, ''));
@@ -563,7 +559,7 @@ function updatePlots() {{
   const metricName = metricSelect.value;
   const all = d.coords.map((_, i) => i);
   const metricHover = all.map(i => d.dataset[i] === 'pooled'
-    ? `dataset: ${{d.datasets[i]}} [${{d.tags[i]}}]<br>subtype: ${{d.labels[i]}}`
+    ? `dataset: ${{d.datasets[i]}}<br>subtype: ${{d.labels[i]}}`
     : `subtype: ${{d.labels[i]}}`);
   const metricTrace = pointTrace(d, all, d.metrics[metricName], 'metric', metricHover, true, metricName);
   Plotly.react('groups', groupTraces, {{scene: scene(fullSphere), showlegend: true,

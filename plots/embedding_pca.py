@@ -3,8 +3,7 @@
 For each modality and encoder, one multi-page PDF is written to
 ``assets/embeddings/<modality>/<encoder>.pdf``:
 
-1. A pooled page. PCA is fitted on all datasets of the modality together (train
-   and test tags, no cap). One panel is colored by source dataset; the other is
+1. A pooled page. PCA is fitted on all datasets of the modality together (no cap). One panel is colored by source dataset; the other is
    colored by normal (label 0) versus anomalous (any non-zero label).
 2. One page per dataset. PCA is fitted on that dataset alone, and points are
    colored by their source label.
@@ -88,7 +87,6 @@ class Projection:
     """2D PCA coordinates of one dataset with its labels."""
 
     name: str
-    tag: str
     coords: np.ndarray
     labels: np.ndarray
 
@@ -236,7 +234,7 @@ def _plot_pooled(pdf: PdfPages, modality: str, encoder: str, projections: list[P
     left.legend(
         handles=_legend_handles(
             [
-                (f"{projection.name} [{projection.tag}] (n={len(projection.coords):,})", color)
+                (f"{projection.name} (n={len(projection.coords):,})", color)
                 for projection, color in zip(projections, dataset_colors)
             ]
         ),
@@ -287,7 +285,7 @@ def _plot_dataset(pdf: PdfPages, modality: str, encoder: str, projection: Projec
         title_fontsize=11,
     )
     axis.set_title(
-        f"{MODALITY_TITLES[modality]} · {encoder}\n{projection.name} [{projection.tag}] "
+        f"{MODALITY_TITLES[modality]} · {encoder}\n{projection.name} "
         f"(n={len(projection.coords):,})",
         fontsize=14,
     )
@@ -309,14 +307,14 @@ def plot_modality_encoder(modality: str, encoder: str, output_root: Path, seed: 
         if not dataset_dir.is_dir():
             LOGGER.warning("%s/%s: dataset directory missing, skipped", modality, name)
             continue
-        entries.append((name, str(meta.get("tag", "train")), dataset_dir, include_labels))
+        entries.append((name, dataset_dir, include_labels))
 
     # Pass 1: per-dataset PCA, and moments for the pooled fit.
     pooled_moments: Moments | None = None
     projections: list[Projection] = []
     dataset_ratios: list[np.ndarray] = []
     loaded_entries = []
-    for name, tag, dataset_dir, include_labels in entries:
+    for name, dataset_dir, include_labels in entries:
         loaded = _load_dataset(dataset_dir, encoder, include_labels)
         if loaded is None:
             LOGGER.warning("%s/%s: no %s embeddings, skipped", modality, name, encoder)
@@ -327,7 +325,7 @@ def plot_modality_encoder(modality: str, encoder: str, output_root: Path, seed: 
             continue
         moments = _moments(embeds)
         mean, axes, ratios = _fit_pca(moments)
-        projections.append(Projection(name, tag, _project(embeds, mean, axes), labels))
+        projections.append(Projection(name, _project(embeds, mean, axes), labels))
         dataset_ratios.append(ratios)
         pooled_moments = moments if pooled_moments is None else pooled_moments + moments
         loaded_entries.append((dataset_dir, include_labels))
@@ -343,7 +341,7 @@ def plot_modality_encoder(modality: str, encoder: str, output_root: Path, seed: 
     for projection, (dataset_dir, include_labels) in zip(projections, loaded_entries):
         embeds, _ = _load_dataset(dataset_dir, encoder, include_labels)
         pooled_projections.append(
-            Projection(projection.name, projection.tag, _project(embeds, pooled_mean, pooled_axes), projection.labels)
+            Projection(projection.name, _project(embeds, pooled_mean, pooled_axes), projection.labels)
         )
 
     output_path = output_root / modality / f"{encoder}.pdf"

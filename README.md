@@ -6,7 +6,6 @@
 git clone https://github.com/nveshaan/delta.git
 cd delta
 uv sync
-uv run python utils/patch_mlflow_ui.py
 ```
 
 ## Data
@@ -54,27 +53,6 @@ Generate embeddings with all configured encoders and modalities with:
 
 ```bash
 uv run python scripts/generate_embeddings.py
-```
-
-Useful command-line options include:
-
-```bash
-# Run one encoder and one modality.
-uv run python scripts/generate_embeddings.py \
-    encoder=CLIP \
-    modality=chest
-
-# Process one configured parent dataset.
-uv run python scripts/generate_embeddings.py \
-    encoder=BiomedCLIP \
-    modality=fundus \
-    dataset="AMDNet23 Dataset"
-
-# Override the batch size, device, or regenerate existing files.
-uv run python scripts/generate_embeddings.py \
-    runtime.batch_size=8 \
-    runtime.device=cpu \
-    overwrite=true
 ```
 
 Use `uv run python scripts/generate_embeddings.py --help` for all command-line options.
