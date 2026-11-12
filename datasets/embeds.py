@@ -4,7 +4,7 @@ Exposes pre-computed embeddings (<encoder>_embeds.npy) and labels (labels.npy)
 saved by ``scripts/generate_embeddings.py`` as PyTorch datasets.
 
 Modality dataset configs are located in ``configs/modality/<modality>.yaml``,
-where each dataset includes a tag ('train' or 'test') and a sample cap limit
+where each dataset lists the labels to include and a sample cap limit
 matching the experimental protocol in stage-2 distillation and evaluation.
 """
 
@@ -157,28 +157,6 @@ def _automatic_cap(
     return selections
 
 
-def _test_cap_indices(
-    loaded: list[tuple[str, "SingleEmbedsDataset"]], seed: int, max_total_size: int
-) -> dict[str, np.ndarray]:
-    """Keep all test samples up to one global maximum, without balancing."""
-    total_size = sum(len(dataset) for _, dataset in loaded)
-    if total_size <= max_total_size:
-        return {
-            dataset_name: np.arange(len(dataset), dtype=np.int64)
-            for dataset_name, dataset in loaded
-        }
-
-    rng = np.random.RandomState(seed)
-    selected_global = np.sort(rng.permutation(total_size)[:max_total_size])
-    selections: dict[str, np.ndarray] = {}
-    offset = 0
-    for dataset_name, dataset in loaded:
-        local_mask = (selected_global >= offset) & (selected_global < offset + len(dataset))
-        selections[dataset_name] = selected_global[local_mask] - offset
-        offset += len(dataset)
-    return selections
-
-
 class SingleEmbedsDataset(Dataset):
     """PyTorch Dataset for a single dataset folder's pre-computed embeddings and labels."""
 
@@ -253,9 +231,8 @@ class SingleEmbedsDataset(Dataset):
 class ModalityEmbedsDataset(Dataset):
     """Aggregate pre-computed embedding datasets for a modality.
 
-    Filters datasets by split ('train', 'test', or 'all') using tags specified in
-    configs/modality/<modality>.yaml. When capping is enabled, every
-    dataset in the selected split contributes equally, with zero and non-zero
+    Loads the datasets listed in configs/modality/<modality>.yaml. When capping
+    is enabled, every dataset contributes equally, with zero and non-zero
     labels balanced within each dataset.
 
     Labels are made globally unique while datasets are merged. ``dataset_label_mapping``
@@ -268,7 +245,6 @@ class ModalityEmbedsDataset(Dataset):
         modality: str | None = None,
         datasets: Mapping[str, Mapping[str, Any]] | None = None,
         data_root: str | Path | None = None,
-        split: str | None = "train",
         encoder: str = "CLIP",
         cap: bool | None = None,
         max_dataset_size: int = 10000,
@@ -280,7 +256,6 @@ class ModalityEmbedsDataset(Dataset):
     ):
         super().__init__()
         self.modality = modality
-        self.split = split
         self.encoder = encoder
         self.cap_enabled = cap
         if max_dataset_size <= 0:
@@ -309,7 +284,6 @@ class ModalityEmbedsDataset(Dataset):
                 # interpolations. Resolve them when this dataset is created
                 # directly, outside Hydra composition.
                 loaded.encoder = self.encoder
-                loaded.split = self.split
                 loaded.seed = self.seed
                 cfg_dict = OmegaConf.to_container(loaded, resolve=True)
 
@@ -338,16 +312,9 @@ class ModalityEmbedsDataset(Dataset):
         self.dataset_names: list[str] = []
         self.sample_dataset_names: list[str] = []
 
-        split_filter = split.lower() if split is not None else "all"
-
         loaded: list[tuple[str, SingleEmbedsDataset]] = []
         for dataset_name, dataset_meta in datasets.items():
             meta = dict(dataset_meta) if isinstance(dataset_meta, Mapping) else {}
-            tag = str(meta.get("tag", "train")).lower()
-
-            if split_filter not in {"all", "both"} and tag != split_filter:
-                continue
-
             dataset_dir = self.root_path / dataset_name
             if not dataset_dir.is_dir():
                 continue
@@ -368,11 +335,7 @@ class ModalityEmbedsDataset(Dataset):
             if len(sub_ds) > 0:
                 loaded.append((dataset_name, sub_ds))
 
-        if self.cap_enabled and split_filter == "test":
-            # Test evaluation only has a global size limit. Unlike training,
-            # test datasets and labels do not need equal contributions.
-            selections = _test_cap_indices(loaded, self.seed, self.max_dataset_size)
-        elif self.cap_enabled:
+        if self.cap_enabled:
             selections = _automatic_cap(loaded, self.seed, self.max_dataset_size)
         else:
             selections = {
@@ -482,7 +445,6 @@ MODALITY_EMBEDS_DATASETS: dict[str, type[ModalityEmbedsDataset]] = {
 
 def build_embeds_dataset(
     modality: str,
-    split: str = "train",
     encoder: str = "CLIP",
     cap: bool | None = None,
     max_dataset_size: int = 10000,
@@ -494,7 +456,6 @@ def build_embeds_dataset(
     cls = MODALITY_EMBEDS_DATASETS.get(modality.lower(), ModalityEmbedsDataset)
     return cls(
         modality=modality,
-        split=split,
         encoder=encoder,
         cap=cap,
         max_dataset_size=max_dataset_size,
@@ -512,12 +473,6 @@ def main() -> None:
         choices=["chest", "fundus", "mri", "oct"],
         default="chest",
         help="Medical imaging modality (default: chest)",
-    )
-    parser.add_argument(
-        "--split",
-        choices=["train", "test", "all"],
-        default="train",
-        help="Split filter based on dataset tag (default: train)",
     )
     parser.add_argument(
         "--encoder",
@@ -552,13 +507,11 @@ def main() -> None:
 
     print(f"\n--- Loading {args.modality} embeddings ---")
     print(f"  Encoder         : {args.encoder}")
-    print(f"  Split           : {args.split}")
     print(f"  Cap enabled     : {args.cap}")
     print(f"  Max dataset size: {args.max_dataset_size}")
 
     dataset = build_embeds_dataset(
         modality=args.modality,
-        split=args.split,
         encoder=args.encoder,
         cap=args.cap,
         max_dataset_size=args.max_dataset_size,

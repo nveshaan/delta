@@ -2,27 +2,20 @@ _target_: datasets.embeds.ChestEmbedsDataset
 modality: chest
 data_root: data/chest
 encoder: ${encoder}
-split: ${split}
 seed: ${seed}
 cap: true
 max_dataset_size: 10000
 
 datasets:
   cardiomegaly_set:
-    tag: train
     labels: null
   covid_affected_and_normal:
-    tag: train
     labels: null
   emphysema:
-    tag: train
     labels: null
   VinCXR:
-    tag: test
     labels: null
   RSNA:
-    tag: test
     labels: null
   COVID-19_Radiography_Dataset:
-    tag: test
     labels: null

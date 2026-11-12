@@ -2,30 +2,22 @@ _target_: datasets.embeds.FundusEmbedsDataset
 modality: fundus
 data_root: data/fundus
 encoder: ${encoder}
-split: ${split}
 seed: ${seed}
 cap: true
 max_dataset_size: 10000
 
 datasets:
   AMDNet23 Dataset:
-    tag: train
     labels: null
   Diabetic Retinopathy and Retinal Diseases Fundus I:
-    tag: train
     labels: null
   Eye Disease Image Dataset:
-    tag: train
     labels: null
   LAG:
-    tag: test
     labels: null
   G1020:
-    tag: test
     labels: null
   ORIGA:
-    tag: test
     labels: null
   Retinal Fundus Images:
-    tag: test
     labels: null

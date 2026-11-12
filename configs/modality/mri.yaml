@@ -2,36 +2,26 @@ _target_: datasets.embeds.MRIEmbedsDataset
 modality: mri
 data_root: data/mri
 encoder: ${encoder}
-split: ${split}
 seed: ${seed}
 cap: true
 max_dataset_size: 10000
 
 datasets:
   Brain Tumor MRI Dataset:
-    tag: train
     labels: null
   BraTS2021:
-    tag: train
     labels: null
   Br35H:
-    tag: train
     labels: null
   BrainTumor:
-    tag: test
     labels: null
   brain_tumor_dataset:
-    tag: test
     labels: null
   brisc2025:
-    tag: test
     labels: null
   Epic and CSCR hospital Dataset:
-    tag: test
     labels: null
   Alzheimer_s Dataset:
-    tag: test
     labels: null
   OASIS Alzheimer's Detection:
-    tag: test
     labels: null
