@@ -20,7 +20,7 @@ hydra:
 
 output_root: data
 modalities: [chest, fundus, mri, oct]
-modality: null
+modality_name: null   # not "modality": that name is the configs/modality config group
 encoder: null
 dataset: null
 overwrite: false
