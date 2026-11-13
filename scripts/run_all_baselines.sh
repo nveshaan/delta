@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 for m in anomalyclip faprompt adaclip; do
   for mod in chest fundus mri oct; do
     echo "=== $m $mod"
-    uv run python scripts/run_baseline.py baselines=$m modality_name=$mod dataset=null 2>&1 \
+    uv run python scripts/run_baseline.py baselines=$m modality=$mod dataset=null 2>&1 \
       | tr '\r' '\n' | grep -E "^(chest|fundus|mri|oct)/|\[skip\]|Error|Traceback"
   done
 done

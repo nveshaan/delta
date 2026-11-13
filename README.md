@@ -90,10 +90,10 @@ The generated files are written to
 
 ```bash
 # One dataset.
-uv run python scripts/run_msde.py modality_name=chest encoder=CLIP dataset=VinCXR
+uv run python scripts/run_msde.py modality=chest encoder=CLIP dataset=VinCXR
 
-# Every dataset listed in configs/modality/<modality_name>.yaml (one MLflow run each).
-uv run python scripts/run_msde.py modality_name=chest encoder=CLIP dataset=null
+# Every dataset listed in configs/datasets/<modality>.yaml (one MLflow run each).
+uv run python scripts/run_msde.py modality=chest encoder=CLIP dataset=null
 
 # Three runs; runs after the first use pseudo labels from the previous one with label_mode=zero_label.
 uv run python scripts/run_msde.py pseudo_labels.rounds=3 pseudo_labels.anomaly_fraction=0.2
@@ -115,10 +115,10 @@ Everything is logged with MLflow to `experiments/mlflow.db` (artifacts in `exper
 `scripts/run_baseline.py` runs an inference-only (zero-shot) baseline on the **raw images** of a dataset, on the same samples as `run_msde.py` (same labels and cap). The method is a config in `configs/baselines/`: `anomalyclip`, `faprompt` or `adaclip`. Their official repos are cloned to `.third_party/` and the released checkpoints downloaded on first use. Raw images are read from `DELTA_RAW_DATA` (see Environment variables), so run it where they are.
 
 ```bash
-uv run python scripts/run_baseline.py baselines=adaclip modality_name=chest dataset=VinCXR
+uv run python scripts/run_baseline.py baselines=adaclip modality=chest dataset=VinCXR
 
 # Every dataset of a modality, another released checkpoint.
-uv run python scripts/run_baseline.py baselines=anomalyclip baselines.checkpoint=visa modality_name=oct dataset=null
+uv run python scripts/run_baseline.py baselines=anomalyclip baselines.checkpoint=visa modality=oct dataset=null
 ```
 
 Checkpoints are chosen with `baselines.checkpoint`; selecting one the authors did not release (e.g. `medical` for AnomalyCLIP and FAPrompt) fails with the list of available ones. AdaCLIP's released weights were all trained on industrial and medical data (`mvtec_colondb`, `visa_clinicdb`, `all`).

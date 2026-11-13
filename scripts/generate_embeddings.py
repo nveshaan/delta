@@ -609,7 +609,7 @@ def main(cfg: DictConfig) -> None:
     seed = int(defaults.get("seed", 42))
     seed_everything(seed)
 
-    selected_modality = settings.get("modality_name")
+    selected_modality = settings.get("modality")
     selected_encoder = settings.get("encoder")
     modalities = ([selected_modality] if isinstance(selected_modality, str)
                   else selected_modality or list(settings["modalities"]))

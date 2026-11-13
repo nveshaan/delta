@@ -1,6 +1,6 @@
 """Run an inference-only anomaly detection baseline on the raw images of a dataset and log the results to MLflow.
 
-Example: python scripts/run_baseline.py baselines=adaclip modality_name=chest dataset=VinCXR
+Example: python scripts/run_baseline.py baselines=adaclip modality=chest dataset=VinCXR
 """
 import argparse
 import sys
@@ -37,22 +37,22 @@ from run_msde import dataset_names, detection_metrics  # noqa: E402
 
 def raw_dataset(cfg: DictConfig, name: str) -> RawDataset:
     """The raw images of `name` in the order the embeddings were generated in (see generate_embeddings.py)."""
-    raw_cfg = OmegaConf.load(PROJECT_ROOT / "configs" / "datasets" / f"raw_{cfg.modality_name}.yaml")
+    raw_cfg = OmegaConf.load(PROJECT_ROOT / "configs" / "datasets" / f"raw_{cfg.modality}.yaml")
     raw_cfg.root = cfg.raw_data_root
-    resolved = OmegaConf.to_container(OmegaConf.create({"data": {cfg.modality_name: raw_cfg}}), resolve=True)
-    config = resolved["data"][cfg.modality_name]
+    resolved = OmegaConf.to_container(OmegaConf.create({"data": {cfg.modality: raw_cfg}}), resolve=True)
+    config = resolved["data"][cfg.modality]
     kwargs = {"seed": int(config.get("seed", 42))}
     for key in ("sample_strategy", "image_extensions"):
         if config.get(key) is not None:
             kwargs[key] = config[key]
-    cls = MODALITY_DATASETS.get(cfg.modality_name.lower(), RawDataset)
+    cls = MODALITY_DATASETS.get(cfg.modality.lower(), RawDataset)
     return cls(config["sources"][name], transform=None, **kwargs)
 
 
 def run_dataset(cfg: DictConfig, name: str) -> None:
     root = Path(cfg.data_root)
     root = root if root.is_absolute() else PROJECT_ROOT / root
-    all_labels = np.load(root / cfg.modality_name / name / "labels.npy")
+    all_labels = np.load(root / cfg.modality / name / "labels.npy")
     raw = raw_dataset(cfg, name)
     if not np.array_equal(np.asarray(raw.labels), all_labels):
         raise RuntimeError(f"{name}: raw images and labels.npy are out of sync ({len(raw)} vs {len(all_labels)})")
@@ -66,7 +66,7 @@ def run_dataset(cfg: DictConfig, name: str) -> None:
         print(f"[skip] {name}: needs both normal and anomalous samples (n={n}, anomalies={n_anomalies})")
         return
 
-    overrides = {"class_name": cfg.class_names[cfg.modality_name]} if "class_name" in cfg.baselines else {}
+    overrides = {"class_name": cfg.class_names[cfg.modality]} if "class_name" in cfg.baselines else {}
     method = hydra.utils.instantiate(cfg.baselines, **overrides)
     score = np.empty(n, dtype=np.float64)
     for start in range(0, n, cfg.load_chunk):
@@ -82,10 +82,10 @@ def run_dataset(cfg: DictConfig, name: str) -> None:
         metrics.update(detection_metrics((labels[sub] == c).astype(int), score[sub], prefix=f"subtype_{c}/"))
 
     label = cfg.baselines.name + ("" if cfg.baselines.get("checkpoint") is None else f"-{cfg.baselines.checkpoint}")
-    with mlflow.start_run(run_name=f"{cfg.modality_name}-{name}-{label}"):
+    with mlflow.start_run(run_name=f"{cfg.modality}-{name}-{label}"):
         mlflow.log_params({
             "dataset": name,
-            "modality": cfg.modality_name,
+            "modality": cfg.modality,
             "method": cfg.baselines.name,
             "seed": cfg.seed,
             "n_samples": n,
@@ -97,7 +97,7 @@ def run_dataset(cfg: DictConfig, name: str) -> None:
         mlflow.log_metrics(metrics, step=0)
         mlflow.log_dict(OmegaConf.to_container(cfg, resolve=True), "configs/config.yaml")
         mlflow.log_dict(OmegaConf.to_container(cfg.baselines, resolve=True), "configs/baseline.yaml")
-    print(f"{cfg.modality_name}/{name}/{label}: " + " ".join(f"{k}={v:.4f}" for k, v in metrics.items() if "/" not in k))
+    print(f"{cfg.modality}/{name}/{label}: " + " ".join(f"{k}={v:.4f}" for k, v in metrics.items() if "/" not in k))
     for c, count in subtype_counts.items():
         print(f"  subtype {c} (n={count}): auroc={metrics[f'subtype_{c}/auroc']:.4f} "
               f"auroc_flipped={metrics[f'subtype_{c}/auroc_flipped']:.4f}")

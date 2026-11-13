@@ -53,7 +53,7 @@ METRIC_LABELS = {metric: metric.replace("_", " ") for metric in DEFAULT_METRICS}
 
 
 def _config(modality: str) -> dict:
-    config = OmegaConf.load(PROJECT_ROOT / "configs" / "modality" / f"{modality}.yaml")
+    config = OmegaConf.load(PROJECT_ROOT / "configs" / "datasets" / f"{modality}.yaml")
     root = Path(config.get("data_root", f"data/{modality}"))
     if not root.is_absolute():
         root = PROJECT_ROOT / root

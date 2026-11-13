@@ -117,7 +117,7 @@ def _label_colors(labels: np.ndarray) -> dict[int, str]:
 
 
 def _load_modality_config(modality: str) -> dict:
-    config = OmegaConf.load(PROJECT_ROOT / "configs" / "modality" / f"{modality}.yaml")
+    config = OmegaConf.load(PROJECT_ROOT / "configs" / "datasets" / f"{modality}.yaml")
     datasets = OmegaConf.to_container(config.datasets, resolve=False)
     data_root = Path(config.get("data_root", f"data/{modality}"))
     if not data_root.is_absolute():

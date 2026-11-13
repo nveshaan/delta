@@ -8,7 +8,7 @@ For each modality and encoder, one multi-page PDF is written to
 2. One page per dataset. PCA is fitted on that dataset alone, and points are
    colored by their source label.
 
-Every sample is used. ``include_labels`` in ``configs/modality/<modality>.yaml``
+Every sample is used. ``include_labels`` in ``configs/datasets/<modality>.yaml``
 is respected, but ``cap`` and ``max_dataset_size`` are ignored. PCA moments are
 accumulated in float64 chunks, so the pooled fit never holds a concatenated
 copy of all embeddings in memory. Axis labels give the variance explained by
@@ -113,7 +113,7 @@ def _label_colors(labels: np.ndarray) -> dict[int, str]:
 
 def _load_modality_config(modality: str) -> dict:
     """Read the dataset list and data root of one modality without resolving Hydra keys."""
-    config = OmegaConf.load(PROJECT_ROOT / "configs" / "modality" / f"{modality}.yaml")
+    config = OmegaConf.load(PROJECT_ROOT / "configs" / "datasets" / f"{modality}.yaml")
     datasets = OmegaConf.to_container(config.datasets, resolve=False)
     data_root = Path(config.get("data_root", f"data/{modality}"))
     if not data_root.is_absolute():

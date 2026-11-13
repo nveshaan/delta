@@ -20,7 +20,7 @@ hydra:
 
 output_root: ${oc.env:DELTA_DATA,data}
 modalities: [chest, fundus, mri, oct]
-modality_name: null   # not "modality": that name is the configs/modality config group
+modality: null
 encoder: null
 dataset: null
 overwrite: false
