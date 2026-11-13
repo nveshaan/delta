@@ -1,0 +1,5 @@
+# The MSDE paper's selection (arXiv:2602.03293): the k nearest neighbours, by distance alone.
+name: original
+fn:
+  _target_: src.score.original
+  _partial_: true

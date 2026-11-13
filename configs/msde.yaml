@@ -33,26 +33,37 @@ pseudo_labels:
   rounds: 1   # total number of MSDE runs; 1 = a single run, no pseudo labels
   anomaly_fraction: 0.2
 
+# "original: X" marks the value of the MSDE paper (arXiv:2602.03293, Table 3). The paper's MSDE also needs
+# score=original (plain k nearest neighbours), dist=euclidean, and the default density, weight and stability.
+# Unmarked values are not in the paper (its density weights equal the defaults here). The overrides that run it
+# are at the end of this file. Differences that remain: exact neighbours instead of NN-Descent, the whole set at once instead of mini-batches,
+# and the raw summed movement as the score instead of its sigmoid(z-score) (same ranking, same AUROC/AUPRC).
 model:
   _target_: src.msde.MeanShiftDensityEnhancement
-  k: 50
-  nbd_sample_count_threshold: 30
+  k: 50                               # original: 100
+  nbd_sample_count_threshold: 30      # original: 70
   n_neighbors: 15
   n_epochs: 200
-  max_iters_weight_count: 4
-  satisfiability_proportion: 0.3
-  learning_rate: 0.3
-  density_strength: 1.0
-  stability_strength: 1.0
-  distance_strength: 1.0
-  h: auto
-  recompute_neighbors: 0
-  max_iters_shift: 1000
-  shift_threshold: 1.0e-4
-  spherical_centering: true
+  max_iters_weight_count: 4           # original: 4
+  satisfiability_proportion: 0.3      # original: 0.3
+  learning_rate: 0.3                  # original: 0.1
+  density_strength: 1.0               # original: 1.0 (weights = density counts)
+  stability_strength: 1.0             # irrelevant without a stability function (stability stays 1)
+  distance_strength: 1.0              # unused with score=original
+  h: auto                             # unused with score=original
+  recompute_neighbors: 0              # original: 1 (reselect neighbours every iteration)
+  max_iters_shift: 1000               # original: 6
+  shift_threshold: 1.0e-4             # original: 0.003 on ‖x - mean‖; this stops on the step, η·‖x - mean‖, so 0.0003 matches
+  sphere: 2   # 0 raw feature space, 1 unit sphere, 2 unit sphere after Fréchet-mean centring. original: 0
   label_mode: zero_label
   chunk_size: 1024
 
 mlflow:
   tracking_uri: sqlite:///experiments/mlflow.db
   experiment_name: msde
+
+# The original MSDE of the paper (arXiv:2602.03293), with Hydra overrides of the settings above:
+#   python scripts/run_msde.py score=original dist=euclidean model.sphere=0 model.recompute_neighbors=1 \
+#     model.k=100 model.nbd_sample_count_threshold=70 model.learning_rate=0.1 \
+#     model.max_iters_shift=6 model.shift_threshold=0.0003
+# density, weight and stability stay at their defaults. Add modality=<name> encoder=<name> dataset=<name> as usual.

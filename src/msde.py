@@ -1,22 +1,23 @@
-"""Mean-shift density enhancement (MSDE) on the unit sphere, in a single file.
+"""Mean-shift density enhancement (MSDE), on the unit sphere or in the raw feature space, in a single file.
 
 Every point of an embedding set is repeatedly moved towards a weighted mean of its neighbours until the
 movement converges. The pipeline, in the order ``MeanShiftDensityEnhancement.forward`` runs it:
 
-1. **Normalise** the embeddings to unit length. They are re-normalised right after every shift, so every
-   state the loop passes through (and the output) lies on the sphere. Optionally (``spherical_centering``) the
-   points are first centred on their Fréchet mean: each is mapped to the tangent space there (log map), which
-   removes the shared mean direction, and put back on the sphere.
+1. **Normalise** (``sphere``): 0 leaves the embeddings as they are and the loop runs in the raw space. 1 scales
+   them to unit length and re-normalises them right after every shift, so every state the loop passes through
+   (and the output) lies on the sphere. 2 does the same after first centring the points on their Fréchet mean:
+   each is mapped to the tangent space there (log map), which removes the shared mean direction, and put back on
+   the sphere.
 2. **Density**: an empirical density per point, computed once on the initial points (or, with a ``density_fn``, at every iteration). A fuzzy k-nearest-neighbour graph is built; points are then compared as rows of that
    sparse graph (sparse matmul), and a point's density is the average number of other points within a
    radius, over a few shrinking radii.
-3. **Select neighbours**: every other point is scored by ``NeighborScore`` (distance x density x stability;
-   distance measured on the sphere) and the ``k``
+3. **Select neighbours**: every other point is scored by ``NeighborScore`` (distance x density x stability)
+   and the ``k``
    best-scoring ones are kept. A dense, stable point can outrank a closer, sparse one.
 4. **Step**: each point moves a fraction ``learning_rate`` towards the weighted mean of its selected neighbours
-   (weights from ``NeighborWeight``), computed with one sparse matmul ``W @ X``; it is then put back on the sphere.
+   (weights from ``NeighborWeight``), computed with one sparse matmul ``W @ X``; with ``sphere`` it is then put back on the sphere.
 5. **Repeat** (optionally re-selecting neighbours every ``recompute_neighbors`` iterations) until the mean
-   per-point movement on the sphere drops below ``shift_threshold`` or ``max_iters_shift`` is reached.
+   per-point movement drops below ``shift_threshold`` or ``max_iters_shift`` is reached.
 
 Stability scores (values in [0, 1], higher = more stable) start at 1.0 for every point. Pass a ``stability_fn`` to
 ``forward`` and they are updated after every iteration from the previous and moved positions; the updated scores feed
@@ -40,6 +41,7 @@ DEFAULT_DEVICE = "mps" if torch.backends.mps.is_available() else "cuda" if torch
 
 LABEL_MODES = ("same_label", "zero_label")
 METRICS = ("euclidean", "cosine")
+SPHERE_MODES = (0, 1, 2)
 
 # Rows handled at a time by every chunked step (neighbour searches, density, selection blocks, gathers).
 DEFAULT_CHUNK_SIZE = 1024
@@ -562,8 +564,8 @@ def prepare_step(indices, dist, density, stability, h, weight_fn, valid, n, iter
 
     ``weight_fn`` is evaluated here with the (n, k) tensors of the selected neighbours; ``graph`` is the (n, k)
     fuzzy-graph weights of the selected pairs (see ``graph_values_at``). The label-validity mask
-    is applied and every row is normalised to sum to 1 (a row with no weight at all stays zero, which leaves its
-    point in place once the step is renormalised onto the sphere).
+    is applied and every row is normalised to sum to 1 (a row with no weight at all stays zero, and ``forward``
+    leaves its point in place).
     """
     w, memory = _call_with_memory(
         weight_fn, (dist, density[indices], stability[indices], h, iteration, n_iters, graph), memory,
@@ -639,11 +641,12 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
         re-estimated every time neighbours are selected).
     recompute_neighbors : 0 or None selects neighbours once, from the initial points; a positive N reselects
         every N iterations (iterations 0, N, 2N, ...), re-evaluating the neighbour weights.
-    max_iters_shift, shift_threshold : the loop stops when the mean per-point movement on the sphere is below
+    max_iters_shift, shift_threshold : the loop stops when the mean per-point movement is below
         ``shift_threshold`` (convergence) or after ``max_iters_shift`` iterations (a safety cap).
-    spherical_centering : centre the points on their Fréchet mean before the first iteration (see
+    sphere : 0 runs in the raw feature space (no normalisation). 1 normalises the points onto the unit sphere and
+        back onto it after every shift. 2 is 1, after first centring the points on their Fréchet mean (see
         ``spherical_center``); everything after it, including the output and the trajectory's first state, is in
-        the centred space. The mean is available as ``center_`` afterwards (``None`` if off).
+        the centred space. The mean is available as ``center_`` afterwards (``None`` unless 2).
     keep_trajectory : also return the unit-norm state after every iteration.
     label_mode : how ``labels`` given to ``forward`` restrict neighbours: "same_label" (a point's neighbours
         must share its label) or "zero_label" (neighbours must have label 0, whatever the point's own label).
@@ -671,7 +674,7 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
         recompute_neighbors=0,
         max_iters_shift=1000,
         shift_threshold=1e-4,
-        spherical_centering=False,
+        sphere=1,
         keep_trajectory=False,
         label_mode="same_label",
         chunk_size=DEFAULT_CHUNK_SIZE,
@@ -696,8 +699,8 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
             raise ValueError("max_iters_shift must be a positive integer")
         if not shift_threshold >= 0:
             raise ValueError("shift_threshold must be >= 0")
-        if not isinstance(spherical_centering, bool):
-            raise ValueError("spherical_centering must be a boolean")
+        if sphere not in SPHERE_MODES or isinstance(sphere, bool):
+            raise ValueError(f"sphere must be one of {SPHERE_MODES}; got {sphere!r}")
         if label_mode not in LABEL_MODES:
             raise ValueError(f"label_mode must be one of {LABEL_MODES}; got {label_mode!r}")
         if isinstance(chunk_size, bool) or not isinstance(chunk_size, int) or chunk_size < 1:
@@ -714,7 +717,7 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
         self.recompute_neighbors = recompute_neighbors or 0
         self.max_iters_shift = max_iters_shift
         self.shift_threshold = shift_threshold
-        self.spherical_centering = spherical_centering
+        self.sphere = sphere
         self.keep_trajectory = keep_trajectory
         self.label_mode = label_mode
         self.chunk_size = chunk_size
@@ -739,7 +742,7 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
         Parameters
         ----------
         X : (n, d) floating-point tensor
-            Input embeddings; rows are normalised onto the unit sphere.
+            Input embeddings; rows are normalised onto the unit sphere unless ``sphere=0``.
         gate : float
             Multiplier on the step size for this call.
         labels : optional (n,) integer array
@@ -766,7 +769,7 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
             Without one, density is computed once from the initial points. The final density is ``density_``.
         dist : {``"euclidean"``, ``"cosine"``}
             Distance used for the fuzzy graph, neighbour selection, ``h="auto"``, and ``score_fn``/``weight_fn``.
-            The points always stay on the unit sphere.
+            With ``sphere`` 1 or 2 the points always stay on the unit sphere.
 
         Returns
         -------
@@ -774,7 +777,7 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
             Unit-norm points after the last iteration.
         metric :
             With ``metric_fn``, the sum of its per-iteration metric values; otherwise the (n,) sum of each point's
-            per-iteration chord lengths on the sphere.
+            per-iteration step lengths (chords on the sphere with ``sphere`` 1 or 2).
         trajectory : list of (n, d) tensors
             Initial state followed by each iteration's state when ``keep_trajectory=True``; otherwise empty.
 
@@ -801,9 +804,9 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
         weight_fn = weight_fn if weight_fn is not None else self.default_weight
         n_iters = self.max_iters_shift
 
-        x = unit(X)                                                          # on the sphere from the start
+        x = unit(X) if self.sphere else X                                    # on the sphere from the start (sphere 1, 2)
         self.center_ = None
-        if self.spherical_centering:
+        if self.sphere == 2:
             x, self.center_ = spherical_center(x)                            # Fréchet-mean centred, still on the sphere
         graph = _similarity_graph(x, self.n_neighbors, self.n_epochs, self.chunk_size, dist)
         if density_fn is None:
@@ -837,9 +840,12 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
             if selected or weights_every_iteration:
                 state = prepare_step(indices, nbr_dist, density, stability, h, weight_fn, valid, n, iteration, n_iters, graph_pairs, memory)
                 memory = state[3]
+                unweighted = state[1].sum(dim=1) == 0                        # no weight at all: the point stays put
 
-            mean = weighted_mean(x, *state[:3], chunk_size=self.chunk_size)
-            moved = unit(x + self.learning_rate * gate * (mean - x))         # step, then back onto the sphere
+            mean = torch.where(unweighted.unsqueeze(1), x, weighted_mean(x, *state[:3], chunk_size=self.chunk_size))
+            moved = x + self.learning_rate * gate * (mean - x)
+            if self.sphere:
+                moved = unit(moved)                                           # back onto the sphere
             if orphan is not None:
                 moved = torch.where(orphan.unsqueeze(1), x, moved)
             previous = x
