@@ -102,13 +102,13 @@ uv run python scripts/run_msde.py pseudo_labels.rounds=3 pseudo_labels.anomaly_f
 uv run python scripts/run_msde.py model.k=20 model.learning_rate=0.1
 ```
 
-The density, score, stability and weight used are selected by the config groups in `configs/{density,score,stability,weight}/`.
+The density, score, weight and stability used are selected by the config groups in `configs/{density,score,weight,stability}/`.
 
 Everything is logged with MLflow to `experiments/mlflow.db` (artifacts in `experiments/artifacts`), view it with `uv run mlflow ui --backend-store-uri sqlite:///experiments/mlflow.db`:
 
-- **Params:** dataset, modality, encoder, density/score/stability/weight names, seed, distance, sample counts and the model hyperparameters.
+- **Params:** dataset, modality, encoder, density/score/weight/stability names, seed, distance, sample counts and the model hyperparameters.
 - **Metrics:** AUROC, AUPRC and P@n (n = number of anomalies), each also computed on the negated score (`*_flipped`), since the direction of the movement score depends on the encoder. For datasets with several anomaly labels, the same metrics are logged per subtype as `subtype_<label>/<metric>` (each subtype against the normal samples). With several rounds, metrics are logged per round (`step`).
-- **Artifacts:** the resolved config and the density, score, stability and weight configs under `configs/`.
+- **Artifacts:** the resolved config and the density, score, weight and stability configs under `configs/`.
 
 ## Run baselines
 

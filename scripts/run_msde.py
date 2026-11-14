@@ -33,7 +33,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from datasets.embeds import SingleEmbedsDataset  # noqa: E402
 
-COMPONENTS = ("density", "score", "stability", "weight")
+COMPONENTS = ("density", "score", "weight", "stability")
 
 
 def precision_at_n(y_true: np.ndarray, score: np.ndarray, n: int) -> float:
@@ -103,8 +103,8 @@ def run_dataset(cfg: DictConfig, name: str) -> None:
     for r in range(cfg.pseudo_labels.rounds):
         model = hydra.utils.instantiate(cfg.model, **overrides)
         _, metric, _ = model(
-            X, dist=cfg.dist, labels=run_labels, density_fn=fns["density"], score_fn=fns["score"],
-            stability_fn=fns["stability"], weight_fn=fns["weight"],
+            X, labels=run_labels, dist=cfg.dist, density_fn=fns["density"], score_fn=fns["score"],
+            weight_fn=fns["weight"], stability_fn=fns["stability"],
         )
         score = metric.detach().cpu().numpy()
         scores.append(score)

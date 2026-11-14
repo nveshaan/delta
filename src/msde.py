@@ -631,18 +631,8 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
     nbd_sample_count_threshold, n_neighbors, n_epochs, max_iters_weight_count, satisfiability_proportion :
         the density computation (see ``density_weights``).
     learning_rate : fraction of the way a point moves towards its weighted mean each iteration.
-    density_strength, stability_strength, distance_strength : the strengths of the default selection score
-        and neighbour weight (see ``NeighborScore`` and ``NeighborWeight``); >= 0, 0 switches a factor off.
-    h : kernel width of the distance term, a positive number, or "auto" (median distance to the ``k`` nearest neighbours,
-        re-estimated every time neighbours are selected).
-    recompute_neighbors : 0 or None selects neighbours once, from the initial points; a positive N reselects
-        every N iterations (iterations 0, N, 2N, ...), re-evaluating the neighbour weights.
     max_iters_shift, shift_threshold : the loop stops when the mean per-point movement is below
         ``shift_threshold`` (convergence) or after ``max_iters_shift`` iterations (a safety cap).
-    sphere : 0 runs in the raw feature space (no normalisation). 1 normalises the points onto the unit sphere and
-        back onto it after every shift. 2 is 1, after first centring the points on their Fréchet mean (see
-        ``spherical_center``); everything after it, including the output and the trajectory's first state, is in
-        the centred space. The mean is available as ``center_`` afterwards (``None`` unless 2).
     keep_trajectory : also return the unit-norm state after every iteration.
     chunk_size : rows handled at a time by every chunked step, which bounds the memory of the run: the exact
         neighbour searches (the density graph and ``h="auto"``), the graph-space distances of the density, the
@@ -650,6 +640,16 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
         distances and of the weighted-mean fallback. Smaller uses less memory; results change only through
         floating-point rounding.
     device : where the computation runs.
+    recompute_neighbors : 0 or None selects neighbours once, from the initial points; a positive N reselects
+        every N iterations (iterations 0, N, 2N, ...), re-evaluating the neighbour weights.
+    sphere : 0 runs in the raw feature space (no normalisation). 1 normalises the points onto the unit sphere and
+        back onto it after every shift. 2 is 1, after first centring the points on their Fréchet mean (see
+        ``spherical_center``); everything after it, including the output and the trajectory's first state, is in
+        the centred space. The mean is available as ``center_`` afterwards (``None`` unless 2).
+    distance_strength, density_strength, stability_strength : the strengths of the default selection score
+        and neighbour weight (see ``NeighborScore`` and ``NeighborWeight``); >= 0, 0 switches a factor off.
+    h : kernel width of the distance term, a positive number, or "auto" (median distance to the ``k`` nearest neighbours,
+        re-estimated every time neighbours are selected).
     """
 
     def __init__(
@@ -661,41 +661,41 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
         max_iters_weight_count=4,
         satisfiability_proportion=0.3,
         learning_rate=0.1,
-        density_strength=1.0,
-        stability_strength=1.0,
-        distance_strength=1.0,
-        h="auto",
-        recompute_neighbors=0,
         max_iters_shift=1000,
         shift_threshold=1e-4,
-        sphere=1,
         keep_trajectory=False,
         chunk_size=DEFAULT_CHUNK_SIZE,
         device=DEFAULT_DEVICE,
+        recompute_neighbors=0,
+        sphere=1,
+        distance_strength=1.0,
+        density_strength=1.0,
+        stability_strength=1.0,
+        h="auto",
     ):
         super().__init__()
         if isinstance(k, bool) or not isinstance(k, int) or k < 1:
             raise ValueError(f"k must be a positive integer; got {k!r}")
-        if isinstance(h, str):
-            if h != "auto":
-                raise ValueError(f"h must be a positive number or 'auto'; got {h!r}")
-        elif isinstance(h, bool) or not h > 0:
-            raise ValueError(f"h must be a positive number or 'auto'; got {h!r}")
-        if recompute_neighbors is not None and (
-            not isinstance(recompute_neighbors, int) or isinstance(recompute_neighbors, bool) or recompute_neighbors < 0
-        ):
-            raise ValueError("recompute_neighbors must be None, 0 (select once) or a positive integer N "
-                             "(reselect every N iterations)")
         if not learning_rate > 0:
             raise ValueError("learning_rate must be > 0")
         if not isinstance(max_iters_shift, int) or max_iters_shift < 1:
             raise ValueError("max_iters_shift must be a positive integer")
         if not shift_threshold >= 0:
             raise ValueError("shift_threshold must be >= 0")
-        if sphere not in SPHERE_MODES or isinstance(sphere, bool):
-            raise ValueError(f"sphere must be one of {SPHERE_MODES}; got {sphere!r}")
         if isinstance(chunk_size, bool) or not isinstance(chunk_size, int) or chunk_size < 1:
             raise ValueError(f"chunk_size must be a positive integer; got {chunk_size!r}")
+        if recompute_neighbors is not None and (
+            not isinstance(recompute_neighbors, int) or isinstance(recompute_neighbors, bool) or recompute_neighbors < 0
+        ):
+            raise ValueError("recompute_neighbors must be None, 0 (select once) or a positive integer N "
+                             "(reselect every N iterations)")
+        if sphere not in SPHERE_MODES or isinstance(sphere, bool):
+            raise ValueError(f"sphere must be one of {SPHERE_MODES}; got {sphere!r}")
+        if isinstance(h, str):
+            if h != "auto":
+                raise ValueError(f"h must be a positive number or 'auto'; got {h!r}")
+        elif isinstance(h, bool) or not h > 0:
+            raise ValueError(f"h must be a positive number or 'auto'; got {h!r}")
 
         self.k = k
         self.nbd_sample_count_threshold = nbd_sample_count_threshold
@@ -704,14 +704,14 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
         self.max_iters_weight_count = max_iters_weight_count
         self.satisfiability_proportion = satisfiability_proportion
         self.learning_rate = learning_rate
-        self.h = h
-        self.recompute_neighbors = recompute_neighbors or 0
         self.max_iters_shift = max_iters_shift
         self.shift_threshold = shift_threshold
-        self.sphere = sphere
         self.keep_trajectory = keep_trajectory
         self.chunk_size = chunk_size
         self.device_name = device
+        self.recompute_neighbors = recompute_neighbors or 0
+        self.sphere = sphere
+        self.h = h
         self.default_score = NeighborScore(distance_strength, density_strength, stability_strength)
         self.default_weight = NeighborWeight(density_strength, stability_strength)
 
@@ -725,8 +725,8 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
         return labels
 
     @torch.no_grad()
-    def forward(self, X, labels=None, stability_fn=None, metric_fn=None, score_fn=None, weight_fn=None,
-                density_fn=None, dist="euclidean"):
+    def forward(self, X, labels=None, dist="euclidean", density_fn=None, score_fn=None, weight_fn=None,
+                stability_fn=None, metric_fn=None):
         """Run MSDE and return ``(shifted, metric, trajectory)``.
 
         Parameters
@@ -735,6 +735,18 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
             Input embeddings; rows are normalised onto the unit sphere unless ``sphere=0``.
         labels : optional (n,) integer array
             Restricts neighbour selection to points labelled 0, whatever a point's own label. Points with no valid neighbour stay in place.
+        dist : {``"euclidean"``, ``"cosine"``}
+            Distance used for the fuzzy graph, neighbour selection, ``h="auto"``, and ``score_fn``/``weight_fn``.
+            With ``sphere`` 1 or 2 the points always stay on the unit sphere.
+        density_fn : optional callable
+            Replaces the density. It is called at the start of every iteration, before neighbour selection.
+            Without one, density is computed once from the initial points. The final density is ``density_``.
+        score_fn : optional callable
+            Replaces the selection score (see ``NeighborScore``). It is called at every neighbour selection,
+            including the initial one.
+        weight_fn : optional callable
+            Replaces the weights used for the weighted mean (see ``NeighborWeight``). A supplied function is
+            evaluated at the start of every iteration using current neighbour distances and stability scores.
         stability_fn : optional callable
             Updates the (n,) stability scores after each iteration. It is called as
             ``stability_fn(moved, x, density, stability, h, iteration, n_iters, graph, memory)``. ``moved`` and
@@ -746,18 +758,6 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
             Computes a custom metric after each iteration. It receives the same arguments as ``stability_fn`` and
             returns ``(metric, memory)``. The value from the last completed iteration is returned as the second
             item instead of the default summed per-point movement.
-        score_fn : optional callable
-            Replaces the selection score (see ``NeighborScore``). It is called at every neighbour selection,
-            including the initial one.
-        weight_fn : optional callable
-            Replaces the weights used for the weighted mean (see ``NeighborWeight``). A supplied function is
-            evaluated at the start of every iteration using current neighbour distances and stability scores.
-        density_fn : optional callable
-            Replaces the density. It is called at the start of every iteration, before neighbour selection.
-            Without one, density is computed once from the initial points. The final density is ``density_``.
-        dist : {``"euclidean"``, ``"cosine"``}
-            Distance used for the fuzzy graph, neighbour selection, ``h="auto"``, and ``score_fn``/``weight_fn``.
-            With ``sphere`` 1 or 2 the points always stay on the unit sphere.
 
         Returns
         -------

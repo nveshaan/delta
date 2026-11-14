@@ -3,8 +3,8 @@ defaults:
   - _self_
   - density: default
   - score: default
-  - stability: default
   - weight: default
+  - stability: default
   - override hydra/job_logging: disabled
   - override hydra/hydra_logging: disabled
 
@@ -47,15 +47,15 @@ model:
   max_iters_weight_count: 4           # original: 4
   satisfiability_proportion: 0.3      # original: 0.3
   learning_rate: 0.1                  # original: 0.1
-  density_strength: 1.0               # original: 1.0 (weights = density counts)
-  stability_strength: 1.0             # irrelevant without a stability function (stability stays 1)
-  distance_strength: 1.0              # unused with score=original
-  h: auto                             # unused with score=original
-  recompute_neighbors: 0              # original: 1 (reselect neighbours every iteration)
   max_iters_shift: 1000               # original: 1000
   shift_threshold: 1.0e-4             # original: 1.0e-4
-  sphere: 2   # 0 raw feature space, 1 unit sphere, 2 unit sphere after Fréchet-mean centring. original: 0
   chunk_size: 1024
+  recompute_neighbors: 0              # original: 1 (reselect neighbours every iteration)
+  sphere: 2   # 0 raw feature space, 1 unit sphere, 2 unit sphere after Fréchet-mean centring. original: 0
+  distance_strength: 1.0              # unused with score=original
+  density_strength: 1.0               # original: 1.0 (weights = density counts)
+  stability_strength: 1.0             # irrelevant without a stability function (stability stays 1)
+  h: auto                             # unused with score=original
 
 mlflow:
   tracking_uri: sqlite:///experiments/mlflow.db
