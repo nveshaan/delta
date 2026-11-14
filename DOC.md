@@ -8,7 +8,7 @@ from msde import MeanShiftDensityEnhancement
 
 X = torch.randn(3000, 512)                      # any (n, d) float embeddings; they are normalised internally
 
-model = MeanShiftDensityEnhancement(k=50, learning_rate=0.33, device="mps")   # "cpu" / "cuda" / "mps"
+model = MeanShiftDensityEnhancement(k=100, learning_rate=0.1, device="mps")   # "cpu" / "cuda" / "mps"
 shifted, movement, trajectory = model(X)
 ```
 
@@ -33,13 +33,13 @@ shifted, movement, trajectory = model(X)
 
 | Argument | Default | Meaning |
 | --- | --- | --- |
-| `k` | 50 | Neighbours each point is pulled towards; needs `k <= n - 1`. |
-| `nbd_sample_count_threshold` | 30 | Density: how many others must lie within the radius for a point to "satisfy" it. |
+| `k` | 100 | Neighbours each point is pulled towards; needs `k <= n - 1`. |
+| `nbd_sample_count_threshold` | 70 | Density: how many others must lie within the radius for a point to "satisfy" it. |
 | `n_neighbors` | 15 | Density: neighbours of the fuzzy graph (`<= n`). |
 | `n_epochs` | 200 | Density: edges weaker than `max / n_epochs` are dropped from the graph. |
 | `max_iters_weight_count` | 4 | Density: number of shrinking radii averaged. |
 | `satisfiability_proportion` | 0.3 | Density: fraction of points that must satisfy the threshold. |
-| `learning_rate` | 0.3 | Fraction of the way a point moves towards its weighted mean per iteration. |
+| `learning_rate` | 0.1 | Fraction of the way a point moves towards its weighted mean per iteration. |
 | `distance_strength` | 1.0 | Strength `c` of the distance term of the default selection score. |
 | `density_strength` | 1.0 | Strength `a` of the density term, in the default selection score and neighbour weight. |
 | `stability_strength` | 1.0 | Strength `b` of the stability term, in the default selection score and neighbour weight. |
@@ -225,7 +225,7 @@ Cost model (`n` points of dimension `d`; `P` about 20 counting passes, `q` = `n_
 - selection: `O(n^2 d)` time and `O(chunk_size * n)` working memory per selection (plus one extra k-NN pass when `h="auto"`); every chunked step uses the same `chunk_size`, so peak memory is about `chunk_size * n` values per block (several blocks at once during selection) or `chunk_size * k * d` for the neighbour gathers;
 - each iteration: one sparse matmul, `O(n k d)`.
 
-With the defaults, 402 of 405 benchmark runs (27 datasets x 5 encoders x 3 seeds, 200-4,000 points, `d` 512-1152) converged within the cap: a median of 50 iterations, 90th percentile 164, and some cells needing several hundred (the largest converged run took 988). The three that did not converge were the same dataset/encoder pair and had a final mean movement of about 1.5e-4, just above the threshold. About 19% of runs needed more than 100 iterations, so a cap of 100 stopped them early, and for some cells that changed the resulting scores noticeably. On an Apple MPS device the average run took about 0.7 s. `torch.compile` is used for the k-NN, graph and distance kernels, so the first call for a new shape includes compilation time.
+With the earlier defaults (`k = 50`, `nbd_sample_count_threshold = 30`, `learning_rate = 0.3`), 402 of 405 benchmark runs (27 datasets x 5 encoders x 3 seeds, 200-4,000 points, `d` 512-1152) converged within the cap: a median of 50 iterations, 90th percentile 164, and some cells needing several hundred (the largest converged run took 988). The three that did not converge were the same dataset/encoder pair and had a final mean movement of about 1.5e-4, just above the threshold. About 19% of runs needed more than 100 iterations, so a cap of 100 stopped them early, and for some cells that changed the resulting scores noticeably. The current `learning_rate = 0.1` takes smaller steps, so expect more iterations than these counts. On an Apple MPS device the average run took about 0.7 s. `torch.compile` is used for the k-NN, graph and distance kernels, so the first call for a new shape includes compilation time.
 
 ## Things to know
 

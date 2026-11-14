@@ -330,7 +330,7 @@ def _search_radius(S, layout, low, high, threshold, required, chunk_size, tol=1e
 
 
 @torch.no_grad()
-def graph_density(S, nbd_sample_count_threshold=30, max_iters_weight_count=4, satisfiability_proportion=0.3,
+def graph_density(S, nbd_sample_count_threshold=70, max_iters_weight_count=4, satisfiability_proportion=0.3,
                   chunk_size=DEFAULT_CHUNK_SIZE):
     """Empirical density of every row of the fuzzy graph ``S`` (an (n, n) coalesced sparse tensor), as an (n,)
     tensor (larger = denser).
@@ -363,7 +363,7 @@ def graph_density(S, nbd_sample_count_threshold=30, max_iters_weight_count=4, sa
 
 
 @torch.no_grad()
-def density_weights(X, nbd_sample_count_threshold=30, n_neighbors=15, n_epochs=200, max_iters_weight_count=4,
+def density_weights(X, nbd_sample_count_threshold=70, n_neighbors=15, n_epochs=200, max_iters_weight_count=4,
                     satisfiability_proportion=0.3, chunk_size=DEFAULT_CHUNK_SIZE, metric="euclidean",
                     return_graph=False):
     """Empirical density of every row of ``X``, returned as an (n,) tensor (larger = denser).
@@ -660,13 +660,13 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
 
     def __init__(
         self,
-        k=50,
-        nbd_sample_count_threshold=30,
+        k=100,
+        nbd_sample_count_threshold=70,
         n_neighbors=15,
         n_epochs=200,
         max_iters_weight_count=4,
         satisfiability_proportion=0.3,
-        learning_rate=0.3,
+        learning_rate=0.1,
         density_strength=1.0,
         stability_strength=1.0,
         distance_strength=1.0,

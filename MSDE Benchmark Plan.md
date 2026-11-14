@@ -233,22 +233,19 @@ Start from the original MSDE of Kar et al. (arXiv:2602.03293) and add this repo'
 
 | Step | Modification | Overrides relative to the row above |
 |---|---|---|
-| 0 | **Original MSDE**: raw features, plain kNN reselected every iteration, paper hyperparameters | `score=original dist=euclidean model.sphere=0 model.recompute_neighbors=1 model.k=100 model.nbd_sample_count_threshold=70 model.learning_rate=0.1 model.max_iters_shift=6 model.shift_threshold=0.0003` |
+| 0 | **Original MSDE**: raw features, plain kNN reselected every iteration, paper hyperparameters | `score=original dist=euclidean model.sphere=0 model.recompute_neighbors=1` |
 | 1 | + Unit-sphere normalization | `model.sphere=1` |
 | 2 | + Fréchet-mean centring | `model.sphere=2` |
 | 3 | + Score-based neighbour selection (density × stability × distance kernel) | `score=default` |
-| 4 | + Fixed neighbours (selected once) | `model.recompute_neighbors=0` |
-| 5 | + Run to convergence | `model.max_iters_shift=1000 model.shift_threshold=1e-4` |
-| 6 | + Repo hyperparameters (= default MSDE) | `model.k=50 model.nbd_sample_count_threshold=30 model.learning_rate=0.3` |
+| 4 | + Fixed neighbours (selected once) (= default MSDE) | `model.recompute_neighbors=0` |
 
 Protocol:
 
 - Zero-shot (transductive) setting, OpenAI CLIP embeddings. Repeat with the Best4 encoder if space allows.
 - Same datasets, cap and seed for every row. Report AUROC averaged over the datasets of each modality.
 - In a cumulative table, a modification's gain depends on what comes before it. Complement it with a leave-one-out check: remove each modification from the default MSDE separately.
-- The repo hyperparameters (step 6) must not be chosen using test labels.
 
-Optional modifications that are not part of the default can be added as extra rows after step 6, e.g. a stability function or pseudo-label rounds (`pseudo_labels.rounds > 1`).
+Optional modifications that are not part of the default can be added as extra rows after step 4, e.g. a stability function or pseudo-label rounds (`pseudo_labels.rounds > 1`).
 
 ---
 
@@ -298,9 +295,7 @@ AUROC (%), zero-shot, OpenAI CLIP. Δ prev = gain over the row above; Δ orig = 
 | 1 | + Unit sphere | | | | | | | |
 | 2 | + Fréchet-mean centring | | | | | | | |
 | 3 | + Score-based neighbour selection | | | | | | | |
-| 4 | + Fixed neighbours | | | | | | | |
-| 5 | + Run to convergence | | | | | | | |
-| 6 | + Repo hyperparameters (**default MSDE**) | | | | | | | |
+| 4 | + Fixed neighbours (**default MSDE**) | | | | | | | |
 
 ## Figure 1 — Data Efficiency Curve
 
