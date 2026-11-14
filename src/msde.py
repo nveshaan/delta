@@ -725,7 +725,7 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
         return labels
 
     @torch.no_grad()
-    def forward(self, X, gate=1.0, labels=None, stability_fn=None, metric_fn=None, score_fn=None, weight_fn=None,
+    def forward(self, X, labels=None, stability_fn=None, metric_fn=None, score_fn=None, weight_fn=None,
                 density_fn=None, dist="euclidean"):
         """Run MSDE and return ``(shifted, metric, trajectory)``.
 
@@ -733,8 +733,6 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
         ----------
         X : (n, d) floating-point tensor
             Input embeddings; rows are normalised onto the unit sphere unless ``sphere=0``.
-        gate : float
-            Multiplier on the step size for this call.
         labels : optional (n,) integer array
             Restricts neighbour selection to points labelled 0, whatever a point's own label. Points with no valid neighbour stay in place.
         stability_fn : optional callable
@@ -833,7 +831,7 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
                 unweighted = state[1].sum(dim=1) == 0                        # no weight at all: the point stays put
 
             mean = torch.where(unweighted.unsqueeze(1), x, weighted_mean(x, *state[:3], chunk_size=self.chunk_size))
-            moved = x + self.learning_rate * gate * (mean - x)
+            moved = x + self.learning_rate * (mean - x)
             if self.sphere:
                 moved = unit(moved)                                           # back onto the sphere
             if orphan is not None:

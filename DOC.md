@@ -26,7 +26,7 @@ shifted, movement, trajectory = model(X)
    - a point's density is its number of other points within the radius, averaged over `max_iters_weight_count` radii shrinking linearly to zero.
 3. **Select neighbours.** In the geometry chosen by `dist` (Euclidean or cosine) of the current points, every other point is scored by `NeighborScore` and the `k` best are kept: with the default score `density^a * stability^b * exp(-c * d^2 / (2 h^2))`, so a dense, stable point can outrank a closer, sparse one. All points are candidates (no distance pre-filter) and a point is never its own neighbour. Candidates with a positive score rank by score; if fewer than `k` have one, the remaining slots go to the nearest candidates.
 4. **Weights.** Each selected neighbour gets a weight from `NeighborWeight` (default `density^a * stability^b`); weights of picks that violate the label mask are zeroed and rows are normalised to sum to 1. A point whose weights are all zero stays where it is. The default weights are computed when neighbours are selected, and again at the start of every iteration if a `stability_fn` or a `density_fn` is given (the weights depend on both); a `weight_fn` you pass is evaluated at the start of every iteration, with the current distances to the selected neighbours.
-5. **Step.** `mean = W @ X` with `W` a sparse `(n, n)` matrix holding the `n*k` normalised weights (one sparse matmul), then `x' = x + learning_rate * gate * (mean - x)`, normalised back onto the sphere unless `sphere=0`.
+5. **Step.** `mean = W @ X` with `W` a sparse `(n, n)` matrix holding the `n*k` normalised weights (one sparse matmul), then `x' = x + learning_rate * (mean - x)`, normalised back onto the sphere unless `sphere=0`.
 6. **Repeat** until the mean per-point movement falls below `shift_threshold` (convergence) or `max_iters_shift` iterations have run. With `recompute_neighbors = N > 0`, stage 3 (the neighbour selection) is redone every `N` iterations on the current points (iterations 0, N, 2N, ...); the default density is never recomputed. A `density_fn`, a `weight_fn`, a `stability_fn` and a `metric_fn`, if given, run in every iteration regardless of `recompute_neighbors`. Within an iteration the order is: density update (`density_fn`) → select neighbours (if due) → weights → step → stability update (`stability_fn`) → metric update (`metric_fn`).
 
 ## Constructor
@@ -54,12 +54,11 @@ shifted, movement, trajectory = model(X)
 
 A strength is a number `>= 0`; 0 switches that factor off and larger values weight it more (they are exponents on density and stability, and a multiplier on the squared distance in the kernel).
 
-## `forward(X, gate=1.0, labels=None, stability_fn=None, metric_fn=None, score_fn=None, weight_fn=None, density_fn=None, dist="euclidean")`
+## `forward(X, labels=None, stability_fn=None, metric_fn=None, score_fn=None, weight_fn=None, density_fn=None, dist="euclidean")`
 
 | Argument | Meaning |
 | --- | --- |
 | `X` | `(n, d)` floating-point embeddings. |
-| `gate` | Multiplier on the step size for this call (0 leaves the points where they are). |
 | `labels` | `(n,)` integer labels restricting neighbour selection: every point may only pick neighbours labelled 0, whatever its own label. A point with no valid neighbour is left where it is. |
 | `stability_fn` | Optional callable that updates the stability scores (`(n,)`, in `[0, 1]`, higher = more stable) after every iteration. It receives the new and previous positions. Without one, every point stays at 1.0. See [Stability](#stability). |
 | `metric_fn` | Optional callable evaluated after every iteration. Its per-iteration values are summed and returned in place of the default `(n,)` summed movement. |
