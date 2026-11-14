@@ -15,7 +15,8 @@ movement converges. The pipeline, in the order ``MeanShiftDensityEnhancement.for
    and the ``k``
    best-scoring ones are kept. A dense, stable point can outrank a closer, sparse one.
 4. **Step**: each point moves a fraction ``learning_rate`` towards the weighted mean of its selected neighbours
-   (weights from ``NeighborWeight``), computed with one sparse matmul ``W @ X``; with ``sphere`` it is then put back on the sphere.
+   (weights from ``NeighborWeight``), computed with one sparse matmul ``W @ X``, plus the bias of the support
+   points if any are given (``bias_fn``); with ``sphere`` it is then put back on the sphere.
 5. **Repeat** (optionally re-selecting neighbours every ``recompute_neighbors`` iterations) until the mean
    per-point movement drops below ``shift_threshold`` or ``max_iters_shift`` is reached.
 
@@ -25,8 +26,13 @@ the next neighbour weights and, whenever neighbours are reselected, the selectio
 neighbour weights and the stability update can each be replaced by a callable (which carries its own parameters)
 passed to ``forward``; all of them receive the index of the current iteration and the iteration cap, so they can
 change over the run, and the UMAP fuzzy graph that was built for the density. ``forward`` also creates one empty
-dict before the first iteration; all five callables receive it and return it (updated) with their result, so they
+dict before the first iteration; all the callables receive it and return it (updated) with their result, so they
 can remember things across calls and share them.
+
+Support points (``support``, e.g. known normal embeddings for few-shot inference) act as high-mass points: every
+iteration ``bias_fn`` turns the feature-wise differences between them and the points into a bias added to every
+point's step, and ``step_fn``, if given, moves them; otherwise they stay where they are. They interact with the
+points only through the bias.
 
 Only torch is required.
 """
@@ -619,6 +625,20 @@ def update_stability(stability_fn, moved, x, density, stability, h, iteration, n
     return new.to(device=stability.device, dtype=stability.dtype), memory
 
 
+def support_vectors(fn, diff, density, stability, h, learning_rate, iteration, n_iters, memory, rows, name):
+    """``fn(diff, density, stability, h, learning_rate, iteration, n_iters, memory)`` for a ``bias_fn`` or
+    ``step_fn``, checked to be a finite (rows, d) tensor; returns ``(vectors, memory)``.
+
+    ``diff`` is the (s, n, d) tensor of feature-wise differences ``support[j] - x[i]`` between the s support
+    points and the n points, ``density`` and ``stability`` are (n,) per point, ``h`` the kernel width in use."""
+    out, memory = _call_with_memory(fn, (diff, density, stability, h, learning_rate, iteration, n_iters), memory, name)
+    shape = (rows, diff.shape[2])
+    if not isinstance(out, torch.Tensor) or tuple(out.shape) != shape or not bool(torch.isfinite(out).all()):
+        raise ValueError(f"{name} must return a finite tensor of shape {shape}; "
+                         f"got {tuple(getattr(out, 'shape', ()))}")
+    return out.to(device=diff.device, dtype=diff.dtype), memory
+
+
 # ---------------------------------------------------------------------------------------------------------
 # The model
 # ---------------------------------------------------------------------------------------------------------
@@ -724,9 +744,25 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
             raise ValueError(f"labels must be 1D with length n={n}; got shape {tuple(labels.shape)}")
         return labels
 
+    def _support(self, support, d, dtype):
+        """``support`` given to ``forward`` (a list of (d,) tensors or an (s, d) tensor) as an (s, d) tensor on
+        the device (or ``None``)."""
+        if support is None:
+            return None
+        if isinstance(support, (list, tuple)):
+            if len(support) == 0:
+                raise ValueError("support must contain at least one point")
+            support = torch.stack([torch.as_tensor(p) for p in support])
+        support = torch.as_tensor(support).detach().to(device=self.device_name, dtype=dtype)
+        if support.dim() != 2 or support.shape[0] == 0 or support.shape[1] != d:
+            raise ValueError(f"support must be points of shape ({d},); got shape {tuple(support.shape)}")
+        if not bool(torch.isfinite(support).all()):
+            raise ValueError("support must be finite")
+        return support
+
     @torch.no_grad()
-    def forward(self, X, labels=None, dist="euclidean", density_fn=None, score_fn=None, weight_fn=None,
-                stability_fn=None, metric_fn=None):
+    def forward(self, X, labels=None, support=None, dist="euclidean", density_fn=None, score_fn=None, weight_fn=None,
+                stability_fn=None, metric_fn=None, bias_fn=None, step_fn=None):
         """Run MSDE and return ``(shifted, metric, trajectory)``.
 
         Parameters
@@ -734,7 +770,13 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
         X : (n, d) floating-point tensor
             Input embeddings; rows are normalised onto the unit sphere unless ``sphere=0``.
         labels : optional (n,) integer array
-            Restricts neighbour selection to points labelled 0, whatever a point's own label. Points with no valid neighbour stay in place.
+            Restricts neighbour selection to points labelled 0, whatever a point's own label. Points with no valid neighbour stay in place
+            (unless ``support`` is given: they still receive the bias).
+        support : optional list of (d,) tensors (or an (s, d) tensor)
+            High-mass support points. They interact with ``X`` only through ``bias_fn``: they are never neighbours
+            and take no part in the density, the fuzzy graph or ``h``. They are mapped into the same space as ``X``
+            (normalised, and centred on the same Fréchet mean with ``sphere=2``), move only through ``step_fn``
+            and are available as ``support_`` afterwards. Requires ``bias_fn``.
         dist : {``"euclidean"``, ``"cosine"``}
             Distance used for the fuzzy graph, neighbour selection, ``h="auto"``, and ``score_fn``/``weight_fn``.
             With ``sphere`` 1 or 2 the points always stay on the unit sphere.
@@ -758,6 +800,17 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
             Computes a custom metric after each iteration. It receives the same arguments as ``stability_fn`` and
             returns ``(metric, memory)``. The value from the last completed iteration is returned as the second
             item instead of the default summed per-point movement.
+        bias_fn : optional callable
+            The pull of the support on the points, required with ``support``. It is called every iteration as
+            ``bias_fn(dist, density, stability, h, learning_rate, iteration, n_iters, memory)``, where ``dist`` is
+            the (s, n, d) tensor of feature-wise differences ``support[j] - x[i]`` at the current positions,
+            ``density`` and ``stability`` are (n,) and ``h`` the kernel width in use. It returns a finite (n, d)
+            bias, added to every point's step outside the learning rate:
+            ``x + learning_rate * (mean - x) + bias``.
+        step_fn : optional callable
+            Moves the support points, with the same arguments as ``bias_fn`` (evaluated at the same positions,
+            before the step). It returns a finite (s, d) step added to the support. Without one the support stays
+            where it is. Requires ``support``.
 
         Returns
         -------
@@ -784,9 +837,15 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
             raise ValueError(f"k={self.k} and n_neighbors={self.n_neighbors} need k <= n-1 and n_neighbors <= n "
                              f"for n={n} points")
 
+        if support is None and (bias_fn is not None or step_fn is not None):
+            raise ValueError("bias_fn and step_fn need support points")
+        if support is not None and bias_fn is None:
+            raise ValueError("support needs a bias_fn: the support acts on the points only through the bias")
+
         stability = torch.ones(n, dtype=X.dtype, device=X.device)           # every point starts fully stable
-        memory = {}                                                          # shared by the five callables: empty at the start
+        memory = {}                                                          # shared by all the callables: empty at the start
         labels = self._labels(labels, n)
+        support = self._support(support, X.shape[1], X.dtype)
         score_fn = score_fn if score_fn is not None else self.default_score
         weights_every_iteration = weight_fn is not None or stability_fn is not None or density_fn is not None
         weight_fn = weight_fn if weight_fn is not None else self.default_weight
@@ -796,6 +855,10 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
         self.center_ = None
         if self.sphere == 2:
             x, self.center_ = spherical_center(x)                            # Fréchet-mean centred, still on the sphere
+        if support is not None and self.sphere:
+            support = unit(support)                                          # the same space as the points
+            if self.sphere == 2:
+                support = unit(_log_map(self.center_.unsqueeze(0), support))
         graph = _similarity_graph(x, self.n_neighbors, self.n_epochs, self.chunk_size, dist)
         if density_fn is None:
             density = graph_density(graph, self.nbd_sample_count_threshold, self.max_iters_weight_count,
@@ -832,10 +895,24 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
 
             mean = torch.where(unweighted.unsqueeze(1), x, weighted_mean(x, *state[:3], chunk_size=self.chunk_size))
             moved = x + self.learning_rate * (mean - x)
+            if support is not None:
+                diff = support.unsqueeze(1) - x.unsqueeze(0)                  # (s, n, d), from each point to each support point
+                bias, memory = support_vectors(
+                    bias_fn, diff, density, stability, h, self.learning_rate, iteration, n_iters, memory, n,
+                    "the bias function")
+                moved = moved + bias                                          # outside the learning rate
+                if step_fn is not None:
+                    support_step, memory = support_vectors(
+                        step_fn, diff, density, stability, h, self.learning_rate, iteration, n_iters, memory,
+                        support.shape[0], "the support step function")
+                    support = support + support_step
+                    if self.sphere:
+                        support = unit(support)
+                del diff
             if self.sphere:
                 moved = unit(moved)                                           # back onto the sphere
-            if orphan is not None:
-                moved = torch.where(orphan.unsqueeze(1), x, moved)
+            if orphan is not None and support is None:
+                moved = torch.where(orphan.unsqueeze(1), x, moved)            # with support, orphans still get the bias
             previous = x
             step = moved - previous                                           # this iteration's step vectors
             change = step.norm(dim=1)
@@ -862,6 +939,7 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
         self.density_ = density                                              # the final density
         self.stability_ = stability                                          # the final scores (1.0 without a stability_fn)
         self.memory_ = memory                                                # the shared memory after the run
+        self.support_ = support                                              # the final support (None without one)
         return x, metric if metric_fn is not None else total_distance, trajectory
 
 

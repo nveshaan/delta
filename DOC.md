@@ -26,8 +26,8 @@ shifted, movement, trajectory = model(X)
    - a point's density is its number of other points within the radius, averaged over `max_iters_weight_count` radii shrinking linearly to zero.
 3. **Select neighbours.** In the geometry chosen by `dist` (Euclidean or cosine) of the current points, every other point is scored by `NeighborScore` and the `k` best are kept: with the default score `density^a * stability^b * exp(-c * d^2 / (2 h^2))`, so a dense, stable point can outrank a closer, sparse one. All points are candidates (no distance pre-filter) and a point is never its own neighbour. Candidates with a positive score rank by score; if fewer than `k` have one, the remaining slots go to the nearest candidates.
 4. **Weights.** Each selected neighbour gets a weight from `NeighborWeight` (default `density^a * stability^b`); weights of picks that violate the label mask are zeroed and rows are normalised to sum to 1. A point whose weights are all zero stays where it is. The default weights are computed when neighbours are selected, and again at the start of every iteration if a `stability_fn` or a `density_fn` is given (the weights depend on both); a `weight_fn` you pass is evaluated at the start of every iteration, with the current distances to the selected neighbours.
-5. **Step.** `mean = W @ X` with `W` a sparse `(n, n)` matrix holding the `n*k` normalised weights (one sparse matmul), then `x' = x + learning_rate * (mean - x)`, normalised back onto the sphere unless `sphere=0`.
-6. **Repeat** until the mean per-point movement falls below `shift_threshold` (convergence) or `max_iters_shift` iterations have run. With `recompute_neighbors = N > 0`, stage 3 (the neighbour selection) is redone every `N` iterations on the current points (iterations 0, N, 2N, ...); the default density is never recomputed. A `density_fn`, a `weight_fn`, a `stability_fn` and a `metric_fn`, if given, run in every iteration regardless of `recompute_neighbors`. Within an iteration the order is: density update (`density_fn`) → select neighbours (if due) → weights → step → stability update (`stability_fn`) → metric update (`metric_fn`).
+5. **Step.** `mean = W @ X` with `W` a sparse `(n, n)` matrix holding the `n*k` normalised weights (one sparse matmul), then `x' = x + learning_rate * (mean - x)`, plus `bias` from `bias_fn` when `support` is given, normalised back onto the sphere unless `sphere=0`.
+6. **Repeat** until the mean per-point movement falls below `shift_threshold` (convergence) or `max_iters_shift` iterations have run. With `recompute_neighbors = N > 0`, stage 3 (the neighbour selection) is redone every `N` iterations on the current points (iterations 0, N, 2N, ...); the default density is never recomputed. A `density_fn`, a `weight_fn`, a `stability_fn` and a `metric_fn`, if given, run in every iteration regardless of `recompute_neighbors`. Within an iteration the order is: density update (`density_fn`) → select neighbours (if due) → weights → support bias and step (`bias_fn`, `step_fn`) → step → stability update (`stability_fn`) → metric update (`metric_fn`).
 
 ## Constructor
 
@@ -56,20 +56,23 @@ The arguments up to `device` are those of the original MSDE (arXiv:2602.03293); 
 
 A strength is a number `>= 0`; 0 switches that factor off and larger values weight it more (they are exponents on density and stability, and a multiplier on the squared distance in the kernel).
 
-## `forward(X, labels=None, dist="euclidean", density_fn=None, score_fn=None, weight_fn=None, stability_fn=None, metric_fn=None)`
+## `forward(X, labels=None, support=None, dist="euclidean", density_fn=None, score_fn=None, weight_fn=None, stability_fn=None, metric_fn=None, bias_fn=None, step_fn=None)`
 
 | Argument | Meaning |
 | --- | --- |
 | `X` | `(n, d)` floating-point embeddings. |
-| `labels` | `(n,)` integer labels restricting neighbour selection: every point may only pick neighbours labelled 0, whatever its own label. A point with no valid neighbour is left where it is. |
+| `labels` | `(n,)` integer labels restricting neighbour selection: every point may only pick neighbours labelled 0, whatever its own label. A point with no valid neighbour is left where it is (with `support`, it still receives the bias). |
+| `support` | Optional list of `(d,)` tensors (or an `(s, d)` tensor): high-mass support points that act on `X` only through `bias_fn`. Needs `bias_fn`. See [Support points](#support-points). |
 | `dist` | `"euclidean"` (default) or `"cosine"` (`1 - cos`; on the unit sphere this is half the squared Euclidean distance, so it orders pairs the same way but on a different scale, which matters for `h` and the distance term). It sets the distance of the whole run: the k-NN that builds the fuzzy graph, the neighbour selection, `h="auto"`, and the `dist` that `score_fn` and `weight_fn` receive. The points always stay on the unit sphere. Any other value raises a `ValueError`. |
 | `density_fn` | Replacement for the density. Called at the start of **every** iteration, before the neighbours are selected. Without one the density is computed once, from the initial points. The final density is available as `model.density_`. |
 | `score_fn` | Replacement for the selection score. Called whenever neighbours are selected, including the initial selection, so with `recompute_neighbors=0` it defines the single neighbour graph the run uses. |
 | `weight_fn` | Replacement for the neighbour weights of the weighted mean. Evaluated at the start of **every** iteration, with the current distances and stability scores. The default is used when it is not given. |
 | `stability_fn` | Optional callable that updates the stability scores (`(n,)`, in `[0, 1]`, higher = more stable) after every iteration. It receives the new and previous positions. Without one, every point stays at 1.0. See [Stability](#stability). |
 | `metric_fn` | Optional callable evaluated after every iteration. Its per-iteration values are summed and returned in place of the default `(n,)` summed movement. |
+| `bias_fn` | The pull of the support on the points, required with `support`. Called every iteration; its `(n, d)` result is added to every point's step, outside the learning rate. |
+| `step_fn` | Optional step of the support points, called every iteration with the same arguments as `bias_fn`. Without one the support stays where it is. Needs `support`. |
 
-### Replacing the density, selection score, neighbour weights, stability update and returned metric
+### Replacing the density, selection score, neighbour weights, stability update, returned metric and support functions
 
 These are plain callables that carry their own parameters. Besides the arguments below, all of them receive and return the **shared memory dict** (next section), and all of them receive the **0-based index of the current iteration** and the **iteration cap** `n_iters` (`max_iters_shift`; a run may stop earlier by convergence), so they can change over the run, and the **UMAP fuzzy graph** that was computed for the initial points (below). The defaults are `graph_density` for the density and the callable classes `NeighborScore(distance_strength, density_strength, stability_strength)` and `NeighborWeight(density_strength, stability_strength)`; the default stability is 1.0 for every point.
 
@@ -103,9 +106,20 @@ metric_fn(moved, x, density, stability, h, iteration, n_iters, graph, memory)
         -> (metric, memory)
     # moved and x: (n, d) positions after and before this iteration; other arguments match stability_fn
     # metric values are summed over iterations and become the second item returned by forward
+
+bias_fn(dist, density, stability, h, learning_rate, iteration, n_iters, memory)
+        -> (bias, memory)
+    # dist: (s, n, d) feature-wise differences support[j] - x[i] at the current positions (s support points);
+    # density, stability: (n,) of the points; h: kernel width in use; learning_rate: the model's
+    # bias: (n, d), finite; added to every point's step: x + learning_rate * (mean - x) + bias
+
+step_fn(dist, density, stability, h, learning_rate, iteration, n_iters, memory)
+        -> (step, memory)
+    # same arguments as bias_fn, at the same (pre-step) positions
+    # step: (s, d), finite; added to the support points
 ```
 
-**Memory.** At the start of `forward`, before the first iteration, one empty dict is created. **Every** function receives it after its regular arguments and returns it, updated, after its result as `(result, memory)`; the returned dict is what the next call (of any of the five functions) receives. It is a plain dict, so the functions can keep running statistics, counters or caches in it, and read what another function wrote (use distinct keys; nothing enforces ownership). A new `forward` call starts with an empty dict again; the final one is available as `model.memory_`. `score_fn` is called once per block of `chunk_size` rows, so the memory passes through the blocks in turn within a selection. A function that returns anything other than a 2-tuple whose second entry is a dict raises a `ValueError`; the default `NeighborScore` and `NeighborWeight` pass the memory through untouched.
+**Memory.** At the start of `forward`, before the first iteration, one empty dict is created. **Every** function receives it after its regular arguments and returns it, updated, after its result as `(result, memory)`; the returned dict is what the next call (of any of the functions) receives. It is a plain dict, so the functions can keep running statistics, counters or caches in it, and read what another function wrote (use distinct keys; nothing enforces ownership). A new `forward` call starts with an empty dict again; the final one is available as `model.memory_`. `score_fn` is called once per block of `chunk_size` rows, so the memory passes through the blocks in turn within a selection. A function that returns anything other than a 2-tuple whose second entry is a dict raises a `ValueError`; the default `NeighborScore` and `NeighborWeight` pass the memory through untouched.
 
 | function | called | `iteration` is |
 | --- | --- | --- |
@@ -114,10 +128,12 @@ metric_fn(moved, x, density, stability, h, iteration, n_iters, graph, memory)
 | `weight_fn` | at the start of every iteration, after any selection | the iteration whose step will use the weights |
 | `stability_fn` | after every iteration | the iteration that just finished |
 | `metric_fn` | after every iteration | the iteration that just finished |
+| `bias_fn` | every iteration, after the weights, before the step | the iteration whose step will use the bias |
+| `step_fn` | every iteration, right after `bias_fn` | the iteration whose step it is |
 
 **The fuzzy graph.** The density is computed from a UMAP-style fuzzy `n_neighbors`-nearest-neighbour graph of the initial points: every point has a per-point scale, an edge to each of its `n_neighbors` nearest points, the two directions of a pair are combined by fuzzy union, and edges weaker than `max / n_epochs` are dropped. Weights are in `(0, 1]`. There is one entry per directed nearest-neighbour edge (about `n_neighbors` per point), so the matrix is **not** symmetric: on 3,240 ARMD OCT embeddings (CLIP) about 58% of the edges also exist in the reverse direction. It is computed **once**, before the first iteration, and is the same for the whole run. Each function gets the view that fits its other arguments: the `(chunk, n)` dense rows aligned with `dist` for `score_fn` (0 where there is no edge), the `(n, k)` values for the selected `(point, neighbour)` pairs for `weight_fn` (0 where a selected neighbour is not a graph neighbour; this differs from the graph neighbours because selection also looks at density), and the whole `(n, n)` coalesced sparse tensor for `density_fn`, `stability_fn` and `metric_fn`.
 
-Within an iteration the order is: density update → select neighbours (if due) → weights → step → stability update → metric update. A function with an older signature (without `iteration`, `n_iters`, `graph` or the memory) raises a `TypeError`. `dist` is the distance chosen by the `dist` argument of `forward`; for `weight_fn` it is recomputed from the current positions every iteration. Shape or value violations raise `ValueError`. Examples:
+Within an iteration the order is: density update → select neighbours (if due) → weights → support bias and step → step → stability update → metric update. A function with an older signature (without `iteration`, `n_iters`, `graph` or the memory) raises a `TypeError`. `dist` is the distance chosen by the `dist` argument of `forward`; for `weight_fn` it is recomputed from the current positions every iteration. Shape or value violations raise `ValueError`. Examples:
 
 ```python
 from msde import MeanShiftDensityEnhancement, NeighborScore, NeighborWeight
@@ -199,6 +215,24 @@ model = MeanShiftDensityEnhancement(k=30, recompute_neighbors=1)
 shifted, movement, _ = model(X, stability_fn=RunningStability(momentum=0.3))
 scores = model.stability_            # (n,) in [0, 1]
 history = model.memory_["median_step"]   # one entry per iteration
+```
+
+### Support points
+
+`support` adds high-mass points, e.g. a few known normal embeddings for few-shot inference. They interact with `X` **only** through `bias_fn`: they are never neighbour candidates and take no part in the density, the fuzzy graph or `h="auto"`.
+
+- **Same space as `X`.** They are normalised onto the unit sphere with `sphere` 1 or 2, and with `sphere=2` centred on the Fréchet mean of `X` (`model.center_`), the same map as `X`.
+- **The bias.** Every iteration `bias_fn` receives `dist[j, i] = support[j] - x[i]` (pointing from each point towards each support point) and returns an `(n, d)` bias. Each point then moves by `learning_rate * (mean - x) + bias` (the bias is not scaled by `learning_rate`; it is passed in so `bias_fn` can use it), then goes back onto the sphere. Points with no valid neighbour still receive the bias. The bias counts towards `movement` and convergence.
+- **Moving the support.** With `step_fn`, the support moves by its `(s, d)` result every iteration (computed at the same positions as the bias) and goes back onto the sphere with `sphere` 1 or 2. Without one it stays where it is. Its movement does not count towards convergence. The final support is `model.support_` (`None` without one); the trajectory holds `X` only.
+- **Errors.** `support` without `bias_fn`, `bias_fn` or `step_fn` without `support`, an empty list, points that are not `(d,)`, and results of the wrong shape or with non-finite values raise a `ValueError`.
+- **Memory.** `dist` is a dense `s x n x d` tensor built every iteration: 16 support points, 10,000 points and `d = 1152` are about 0.7 GB in float32.
+
+```python
+def pull(dist, density, stability, h, learning_rate, iteration, n_iters, memory):
+    return learning_rate * dist.mean(dim=0), memory      # towards the support's centroid
+
+model = MeanShiftDensityEnhancement()
+shifted, movement, _ = model(X, support=[X[i] for i in normal_idx], bias_fn=pull)
 ```
 
 ## Speed
