@@ -50,7 +50,7 @@ MSDE is evaluated in two feature settings:
 
 - No target support images are supplied.
 - No target anomaly labels are supplied.
-- MSDE (CLIP) uses OpenAI CLIP embeddings.
+- MSDE (CLIP) uses OpenAI CLIP ViT-L/14@336 image embeddings, the same CLIP weights as the published baselines (which use its patch tokens).
 - MSDE (Best4) uses the best of the four medical encoders.
 - Classical training-free operations may exploit the unlabeled target set collectively.
 - The Best4 encoder must be selected without using final test-set anomaly labels.
@@ -59,12 +59,12 @@ MSDE is evaluated in two feature settings:
 
 | Method | Feature space | Target support | Target labels | Target training | Role |
 |---|---|---|---|---|---|
-| AnomalyCLIP | CLIP | None | None | None | Published ZSAD |
-| AdaCLIP | CLIP | None | None | None | Published ZSAD |
-| FAPrompt | CLIP | None | None | None | Published ZSAD |
-| AA-CLIP | CLIP | None | None | None | Published ZSAD |
-| Bayes-PFL | CLIP | None | None | None | Published ZSAD |
-| **MSDE (CLIP)** | **OpenAI CLIP** | **None** | **None** | **None** | **Proposed** |
+| AnomalyCLIP | OpenAI CLIP ViT-L/14@336 patch tokens | None | None | None | Published ZSAD |
+| AdaCLIP | OpenAI CLIP ViT-L/14@336 patch tokens | None | None | None | Published ZSAD |
+| FAPrompt | OpenAI CLIP ViT-L/14@336 patch tokens | None | None | None | Published ZSAD |
+| AA-CLIP | OpenAI CLIP ViT-L/14@336 patch tokens (to verify) | None | None | None | Published ZSAD |
+| Bayes-PFL | OpenAI CLIP ViT-L/14@336 patch tokens (to verify) | None | None | None | Published ZSAD |
+| **MSDE (CLIP)** | **OpenAI CLIP ViT-L/14@336 image embedding** | **None** | **None** | **None** | **Proposed** |
 | **MSDE (Best4)** | **Best of MedImageInsight / UniMed-CLIP / BiomedCLIP / MedSigLIP** | **None** | **None** | **None** | **Proposed** |
 
 ### Unsupervised vs zero-shot
@@ -118,12 +118,12 @@ The zero-shot setting can be viewed conceptually as **K = 0**, although its prot
 
 | Method | Feature space | Support | Target adaptation/training | Real abnormal support? | Role |
 |---|---|---|---|---:|---|
-| ANoCo | OpenAI CLIP / published CLIP setup | K normal images | None | No | Published training-free FSAD |
-| DPMM | OpenAI CLIP | K normal images | Fit mixture model | No | Published unsupervised FSAD |
-| MediCLIP | OpenAI CLIP / published CLIP setup | K normal images | Published adaptation | No | Published medical FSAD |
-| UniVAD | Published visual foundation features | K normal images | None | No | Published training-free FSAD |
-| AnomaMed | Published medical/CLIP setup | K normal images | Synthetic anomaly generation + adaptation | No | Published medical FSAD |
-| **MSDE (CLIP)** | **OpenAI CLIP** | **K normal images** | **None** | **No** | **Proposed training-free FSAD** |
+| ANoCo | DINOv3-L/16 patch features (layer 18) | K normal images | None | No | Published training-free FSAD |
+| DPMM | DINOv2-S/14 patch features | K normal images | Fit mixture model (published on the full normal training set) | No | Published unsupervised FSAD |
+| MediCLIP | CLIP patch features (variant to verify) | K normal images | Published adaptation | No | Published medical FSAD |
+| UniVAD | CLIP and DINOv2 patch features with segmentation masks (to verify) | K normal images | None | No | Published training-free FSAD |
+| AnomaMed | Multi-layer CLIP patch features (variant to verify) | K normal images | Synthetic anomaly generation + adaptation | No | Published medical FSAD |
+| **MSDE (CLIP)** | **OpenAI CLIP ViT-L/14@336 image embedding** | **K normal images** | **None** | **No** | **Proposed training-free FSAD** |
 | **MSDE (Best4)** | **Best of MedImageInsight / UniMed-CLIP / BiomedCLIP / MedSigLIP** | **K normal images** | **None** | **No** | **Proposed training-free FSAD** |
 
 ### Training-free vs few-shot
@@ -194,6 +194,30 @@ Therefore, the same anomaly detectors are evaluated across the same encoder set.
 - Do not use test labels to select the encoder.
 - Report MSDE separately with each encoder rather than only reporting Best4.
 
+## 5.3 Encoder × K-Shot Matrix (MSDE only)
+
+The encoder comparison is repeated for few-shot MSDE, to ask:
+
+> Does the gain from normal support depend on the representation, and does the encoder ranking change with K?
+
+MSDE is run with every encoder at **K = 0, 1, 2, 4, 8, 16** normal support samples (K = 0 is the zero-shot condition, the MSDE column of Section 5.2).
+
+| Encoder | K = 0 | K = 1 | K = 2 | K = 4 | K = 8 | K = 16 |
+|---|---:|---:|---:|---:|---:|---:|
+| **OpenAI CLIP** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **MedImageInsight** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **UniMed-CLIP** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **BiomedCLIP** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **MedSigLIP** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+### Encoder × K-shot protocol
+
+- The support samples are chosen from the labels alone, so every encoder gets the **same support images** for a given K and seed.
+- The support samples are removed from the evaluated set, for every encoder.
+- For K > 0, repeat over several support-sampling seeds (e.g. 5) and report mean ± standard deviation; the evaluated set and every other setting stay fixed across seeds.
+- Use the same MSDE configuration for every encoder and K; the bias function is the default (a `learning_rate` step towards the support mean).
+- Best4 is chosen at K = 0 without test labels, and stays fixed for every K.
+
 ---
 
 # 6. Recommended MSDE Ablations
@@ -231,13 +255,18 @@ This isolates the contribution of exploiting the unlabeled target distribution.
 
 Start from the original MSDE of Kar et al. (arXiv:2602.03293) and add this repo's modifications one at a time, in a fixed order, until the default MSDE of `configs/msde.yaml` is reached. Each row keeps every modification above it, so its gain is measured on top of all earlier ones.
 
+Every component config group (`density`, `score`, `weight`, `metric`) has two options: **`original`**, the paper's function, and **`default`**, the proposed one. `stability` stays at the paper's built-in constant 1 in every row.
+
 | Step | Modification | Overrides relative to the row above |
 |---|---|---|
-| 0 | **Original MSDE**: raw features, plain kNN reselected every iteration, paper hyperparameters | `score=original dist=euclidean model.sphere=0 model.recompute_neighbors=1` |
-| 1 | + Unit-sphere normalization | `model.sphere=1` |
-| 2 | + Fréchet-mean centring | `model.sphere=2` |
-| 3 | + Score-based neighbour selection (density × stability × distance kernel) | `score=default` |
-| 4 | + Fixed neighbours (selected once) (= default MSDE) | `model.recompute_neighbors=0` |
+| 0 | **Original MSDE**: raw features, plain kNN reselected every iteration, paper density, weights and score, paper hyperparameters | `density=original score=original weight=original metric=original model.sphere=0 model.recompute_neighbors=1` |
+| 1 | + Fixed neighbours (selected once) | `model.recompute_neighbors=0` |
+| 2 | + Unit-sphere normalization | `model.sphere=1` |
+| 3 | + Fréchet-mean centring | `model.sphere=2` |
+| 4 | + Proposed density | `density=default` |
+| 5 | + Proposed neighbour score | `score=default` |
+| 6 | + Proposed neighbour weights | `weight=default` |
+| 7 | + Proposed anomaly metric (= default MSDE) | `metric=default` |
 
 Protocol:
 
@@ -245,7 +274,7 @@ Protocol:
 - Same datasets, cap and seed for every row. Report AUROC averaged over the datasets of each modality.
 - In a cumulative table, a modification's gain depends on what comes before it. Complement it with a leave-one-out check: remove each modification from the default MSDE separately.
 
-Optional modifications that are not part of the default can be added as extra rows after step 4, e.g. a stability function or pseudo-label rounds (`pseudo_labels.rounds > 1`).
+Optional modifications that are not part of the default can be added as extra rows after step 7, e.g. a stability function or pseudo-label rounds (`pseudo_labels.rounds > 1`).
 
 ---
 
@@ -255,24 +284,24 @@ Optional modifications that are not part of the default can be added as extra ro
 
 | Method | Feature space | Target support | Training-free? | Unsupervised? | Zero-shot? |
 |---|---|---|---:|---:|---:|
-| AnomalyCLIP | CLIP | None | No | No | Yes |
-| AdaCLIP | CLIP | None | No | No | Yes |
-| FAPrompt | CLIP | None | No | No | Yes |
-| AA-CLIP | CLIP | None | No | No | Yes |
-| Bayes-PFL | CLIP | None | No | No | Yes |
-| **MSDE (CLIP)** | **OpenAI CLIP** | **None** | **Yes** | **Yes** | **Yes** |
+| AnomalyCLIP | OpenAI CLIP ViT-L/14@336 patch tokens | None | No | No | Yes |
+| AdaCLIP | OpenAI CLIP ViT-L/14@336 patch tokens | None | No | No | Yes |
+| FAPrompt | OpenAI CLIP ViT-L/14@336 patch tokens | None | No | No | Yes |
+| AA-CLIP | OpenAI CLIP ViT-L/14@336 patch tokens (to verify) | None | No | No | Yes |
+| Bayes-PFL | OpenAI CLIP ViT-L/14@336 patch tokens (to verify) | None | No | No | Yes |
+| **MSDE (CLIP)** | **OpenAI CLIP ViT-L/14@336 image embedding** | **None** | **Yes** | **Yes** | **Yes** |
 | **MSDE (Best4)** | **Best4 medical encoder** | **None** | **Yes** | **Yes** | **Yes** |
 
 ## Table 2 — Few-Shot Benchmark
 
 | Method | Feature space | Normal support | Abnormal support | Training-free? | Unsupervised? |
 |---|---|---:|---:|---:|---:|
-| ANoCo | CLIP | K | 0 | Yes | Yes |
-| DPMM | CLIP | K | 0 | No | Yes |
-| MediCLIP | CLIP | K | 0 | No | No* |
-| UniVAD | Published feature space | K | 0 | Yes | Yes |
-| AnomaMed | Published feature space | K | 0 | No | No* |
-| **MSDE (CLIP)** | **OpenAI CLIP** | **K** | **0** | **Yes** | **Yes** |
+| ANoCo | DINOv3-L/16 | K | 0 | Yes | Yes |
+| DPMM | DINOv2-S/14 | K | 0 | No | Yes |
+| MediCLIP | CLIP (variant to verify) | K | 0 | No | No* |
+| UniVAD | CLIP + DINOv2 (to verify) | K | 0 | Yes | Yes |
+| AnomaMed | CLIP, multi-layer (variant to verify) | K | 0 | No | No* |
+| **MSDE (CLIP)** | **OpenAI CLIP ViT-L/14@336** | **K** | **0** | **Yes** | **Yes** |
 | **MSDE (Best4)** | **Best4 medical encoder** | **K** | **0** | **Yes** | **Yes** |
 
 ## Table 3 — Encoder Comparison
@@ -292,10 +321,27 @@ AUROC (%), zero-shot, OpenAI CLIP. Δ prev = gain over the row above; Δ orig = 
 | Step | Configuration | Chest | Fundus | MRI | OCT | Mean | Δ prev | Δ orig |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
 | 0 | Original MSDE | | | | | | — | — |
-| 1 | + Unit sphere | | | | | | | |
-| 2 | + Fréchet-mean centring | | | | | | | |
-| 3 | + Score-based neighbour selection | | | | | | | |
-| 4 | + Fixed neighbours (**default MSDE**) | | | | | | | |
+| 1 | + Fixed neighbours | | | | | | | |
+| 2 | + Unit sphere | | | | | | | |
+| 3 | + Fréchet-mean centring | | | | | | | |
+| 4 | + Proposed density | | | | | | | |
+| 5 | + Proposed neighbour score | | | | | | | |
+| 6 | + Proposed neighbour weights | | | | | | | |
+| 7 | + Proposed anomaly metric (**default MSDE**) | | | | | | | |
+
+## Table 5 — Encoder × K-Shot (MSDE)
+
+AUROC (%), mean over modalities; for K > 0, mean ± standard deviation over support-sampling seeds. Δ = gain of K = 16 over K = 0. Settings as in Section 5.3.
+
+| Encoder | K = 0 | K = 1 | K = 2 | K = 4 | K = 8 | K = 16 | Δ |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| OpenAI CLIP | | | | | | | |
+| MedImageInsight | | | | | | | |
+| UniMed-CLIP | | | | | | | |
+| BiomedCLIP | | | | | | | |
+| MedSigLIP | | | | | | | |
+
+Per-modality versions of this table go in the appendix.
 
 ## Figure 1 — Data Efficiency Curve
 
@@ -339,6 +385,8 @@ This asks:
 This asks:
 
 > How much does the choice of pretrained representation affect MSDE?
+
+The encoder × K-shot matrix (Table 5) asks the same question in the few-shot setting, and whether normal support narrows or widens the gaps between encoders.
 
 ## 8.3 Best4 Comparison
 
