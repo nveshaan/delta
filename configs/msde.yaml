@@ -27,8 +27,8 @@ cap: 10000
 dist: euclidean
 
 # Extra MSDE runs. Round 0 runs without labels; every later round re-runs on the original embeddings with
-# pseudo labels from the previous round's score (top `anomaly_fraction` by score = 1, rest = 0) and
-# label_mode=zero_label, so points are only pulled towards presumed-normal neighbours.
+# pseudo labels from the previous round's score (top `anomaly_fraction` by score = 1, rest = 0), so points are
+# only pulled towards presumed-normal neighbours (label 0).
 pseudo_labels:
   rounds: 1   # total number of MSDE runs; 1 = a single run, no pseudo labels
   anomaly_fraction: 0.2
@@ -55,7 +55,6 @@ model:
   max_iters_shift: 1000               # original: 1000
   shift_threshold: 1.0e-4             # original: 1.0e-4
   sphere: 2   # 0 raw feature space, 1 unit sphere, 2 unit sphere after Fréchet-mean centring. original: 0
-  label_mode: zero_label
   chunk_size: 1024
 
 mlflow:

@@ -101,9 +101,7 @@ def run_dataset(cfg: DictConfig, name: str) -> None:
     scores = []  # per-sample scores of every MSDE run
     run_labels = None
     for r in range(cfg.pseudo_labels.rounds):
-        model = hydra.utils.instantiate(
-            cfg.model, **overrides, **({"label_mode": "zero_label"} if run_labels is not None else {})
-        )
+        model = hydra.utils.instantiate(cfg.model, **overrides)
         _, metric, _ = model(
             X, dist=cfg.dist, labels=run_labels, density_fn=fns["density"], score_fn=fns["score"],
             stability_fn=fns["stability"], weight_fn=fns["weight"],

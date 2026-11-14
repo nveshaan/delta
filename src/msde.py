@@ -39,7 +39,6 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_DEVICE = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
 
-LABEL_MODES = ("same_label", "zero_label")
 METRICS = ("euclidean", "cosine")
 SPHERE_MODES = (0, 1, 2)
 
@@ -481,14 +480,14 @@ class NeighborWeight:
 
 @torch.no_grad()
 def select_neighbors(X, density, stability, k, h, score_fn, graph,
-                     labels=None, corpus_labels=None, chunk_size=DEFAULT_CHUNK_SIZE, iteration=0, n_iters=1, memory=None,
+                     labels=None, chunk_size=DEFAULT_CHUNK_SIZE, iteration=0, n_iters=1, memory=None,
                      metric="euclidean"):
     """The ``k`` best-scoring other points for every point of ``X``.
 
     Distances are Euclidean on ``X`` (or cosine, with ``metric="cosine"``). All other points are candidates (no distance pre-filter); a point is never
     its own neighbour. Candidates with a positive score rank by score,
     the remaining slots (if any) go to the nearest candidates. With ``labels`` a point may only pick points
-    whose ``corpus_labels`` equal its label.
+    labelled 0, whatever its own label.
 
     ``iteration``, ``n_iters``, the rows of the fuzzy ``graph`` (see ``density_weights``) and the shared
     ``memory`` dict (an empty one if omitted) are handed on to ``score_fn``, a chunk of rows at a time, the memory
@@ -505,9 +504,6 @@ def select_neighbors(X, density, stability, k, h, score_fn, graph,
         raise ValueError(f"k={k!r} is invalid for {n} points; expected an integer 1 <= k <= {n - 1}")
     if h == "auto":
         h = median_neighbor_distance(X, k, chunk_size, metric)
-    if labels is not None and corpus_labels is None:
-        corpus_labels = labels
-
     layout = _graph_layout(graph)
     indices = torch.empty((n, k), dtype=torch.long, device=X.device)
     dist = torch.empty((n, k), dtype=X.dtype, device=X.device)
@@ -527,7 +523,7 @@ def select_neighbors(X, density, stability, k, h, score_fn, graph,
         rows = torch.arange(end - start, device=X.device)
         excluded[rows, rows + start] = True                                  # never its own neighbour
         if labels is not None:
-            excluded |= labels[start:end].unsqueeze(1) != corpus_labels.unsqueeze(0)
+            excluded |= (labels != 0).unsqueeze(0)                         # only label-0 points are candidates
         top, idx = key.masked_fill(excluded, float("-inf")).topk(k, dim=1)
 
         indices[start:end] = idx
@@ -648,8 +644,6 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
         ``spherical_center``); everything after it, including the output and the trajectory's first state, is in
         the centred space. The mean is available as ``center_`` afterwards (``None`` unless 2).
     keep_trajectory : also return the unit-norm state after every iteration.
-    label_mode : how ``labels`` given to ``forward`` restrict neighbours: "same_label" (a point's neighbours
-        must share its label) or "zero_label" (neighbours must have label 0, whatever the point's own label).
     chunk_size : rows handled at a time by every chunked step, which bounds the memory of the run: the exact
         neighbour searches (the density graph and ``h="auto"``), the graph-space distances of the density, the
         (chunk, n) blocks of the neighbour selection, and the (chunk, k, d) gathers of the live neighbour
@@ -676,7 +670,6 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
         shift_threshold=1e-4,
         sphere=1,
         keep_trajectory=False,
-        label_mode="same_label",
         chunk_size=DEFAULT_CHUNK_SIZE,
         device=DEFAULT_DEVICE,
     ):
@@ -701,8 +694,6 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
             raise ValueError("shift_threshold must be >= 0")
         if sphere not in SPHERE_MODES or isinstance(sphere, bool):
             raise ValueError(f"sphere must be one of {SPHERE_MODES}; got {sphere!r}")
-        if label_mode not in LABEL_MODES:
-            raise ValueError(f"label_mode must be one of {LABEL_MODES}; got {label_mode!r}")
         if isinstance(chunk_size, bool) or not isinstance(chunk_size, int) or chunk_size < 1:
             raise ValueError(f"chunk_size must be a positive integer; got {chunk_size!r}")
 
@@ -719,20 +710,19 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
         self.shift_threshold = shift_threshold
         self.sphere = sphere
         self.keep_trajectory = keep_trajectory
-        self.label_mode = label_mode
         self.chunk_size = chunk_size
         self.device_name = device
         self.default_score = NeighborScore(distance_strength, density_strength, stability_strength)
         self.default_weight = NeighborWeight(density_strength, stability_strength)
 
     def _labels(self, labels, n):
-        """``(query_labels, neighbor_labels)`` for ``labels`` given to ``forward`` (or ``(None, None)``)."""
+        """``labels`` given to ``forward`` as a long tensor on the device (or ``None``)."""
         if labels is None:
-            return None, None
+            return None
         labels = torch.as_tensor(labels, device=self.device_name).detach().long()
         if labels.dim() != 1 or labels.shape[0] != n:
             raise ValueError(f"labels must be 1D with length n={n}; got shape {tuple(labels.shape)}")
-        return (labels if self.label_mode == "same_label" else torch.zeros_like(labels)), labels
+        return labels
 
     @torch.no_grad()
     def forward(self, X, gate=1.0, labels=None, stability_fn=None, metric_fn=None, score_fn=None, weight_fn=None,
@@ -746,7 +736,7 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
         gate : float
             Multiplier on the step size for this call.
         labels : optional (n,) integer array
-            Restricts neighbour selection according to ``label_mode``. Points with no valid neighbour stay in place.
+            Restricts neighbour selection to points labelled 0, whatever a point's own label. Points with no valid neighbour stay in place.
         stability_fn : optional callable
             Updates the (n,) stability scores after each iteration. It is called as
             ``stability_fn(moved, x, density, stability, h, iteration, n_iters, graph, memory)``. ``moved`` and
@@ -798,7 +788,7 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
 
         stability = torch.ones(n, dtype=X.dtype, device=X.device)           # every point starts fully stable
         memory = {}                                                          # shared by the five callables: empty at the start
-        query_labels, neighbor_labels = self._labels(labels, n)
+        labels = self._labels(labels, n)
         score_fn = score_fn if score_fn is not None else self.default_score
         weights_every_iteration = weight_fn is not None or stability_fn is not None or density_fn is not None
         weight_fn = weight_fn if weight_fn is not None else self.default_weight
@@ -831,7 +821,7 @@ class MeanShiftDensityEnhancement(torch.nn.Module):
             if selected:
                 indices, nbr_dist, valid, orphan, h, memory = select_neighbors(
                     x, density, stability, self.k, self.h, score_fn, graph,
-                    labels=query_labels, corpus_labels=neighbor_labels, chunk_size=self.chunk_size,
+                    labels=labels, chunk_size=self.chunk_size,
                     iteration=iteration, n_iters=n_iters, memory=memory, metric=dist,
                 )
                 graph_pairs = graph_values_at(graph, indices).to(x.dtype)     # fuzzy-graph weight of every selected pair

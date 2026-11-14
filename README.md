@@ -95,7 +95,7 @@ uv run python scripts/run_msde.py modality=chest encoder=CLIP dataset=VinCXR
 # Every dataset listed in configs/datasets/<modality>.yaml (one MLflow run each).
 uv run python scripts/run_msde.py modality=chest encoder=CLIP dataset=null
 
-# Three runs; runs after the first use pseudo labels from the previous one with label_mode=zero_label.
+# Three runs; runs after the first use pseudo labels from the previous one (neighbours must be presumed normal).
 uv run python scripts/run_msde.py pseudo_labels.rounds=3 pseudo_labels.anomaly_fraction=0.2
 
 # Override MSDE hyperparameters.

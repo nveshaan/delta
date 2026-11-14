@@ -49,7 +49,6 @@ shifted, movement, trajectory = model(X)
 | `shift_threshold` | 1e-4 | Convergence: stop when the mean per-point movement is below this. |
 | `sphere` | 1 | 0: no normalisation, the loop runs in the raw feature space. 1: normalise onto the unit sphere, and back onto it after every shift. 2: as 1, after first centring the points on their Fréchet (Karcher) mean: each is mapped to the tangent space at the mean (log map) and put back on the sphere, i.e. `normalise(x - (x·mu) mu)`, which removes the shared mean direction (every point becomes orthogonal to the mean). It does not spread the points evenly. Everything after it (density, selection, output, the trajectory's first state, `movement`) is in the centred space and the output is **not** mapped back; the mean is `model.center_` (`None` unless 2). |
 | `keep_trajectory` | `False` | Also return the state after every iteration. |
-| `label_mode` | `"same_label"` | How `labels` restrict neighbours: `"same_label"` (neighbours share the point's label) or `"zero_label"` (neighbours must have label 0, whatever the point's own label). |
 | `chunk_size` | 1024 | Rows handled at a time by **every** chunked step, which bounds the memory of the run: the exact neighbour searches (the density graph and `h="auto"`), the graph-space distances of the density, the `(chunk, n)` blocks of the neighbour selection, and the `(chunk, k, d)` gathers of the live neighbour distances and of the weighted-mean fallback. Lower it if memory runs out. In principle it can change results through floating-point rounding in the distances (a different block shape can round differently); in tests it did not: sizes from 32 to 4096 gave identical outputs on synthetic data, and sizes from 256 to 4096 on ARMD OCT embeddings (MPS), with the same run time to within about 5%. |
 | `device` | auto | `"mps"`, `"cuda"` or `"cpu"`; inputs are moved there. |
 
@@ -61,7 +60,7 @@ A strength is a number `>= 0`; 0 switches that factor off and larger values weig
 | --- | --- |
 | `X` | `(n, d)` floating-point embeddings. |
 | `gate` | Multiplier on the step size for this call (0 leaves the points where they are). |
-| `labels` | `(n,)` integer labels restricting neighbour selection (see `label_mode`). A point with no valid neighbour is left where it is. |
+| `labels` | `(n,)` integer labels restricting neighbour selection: every point may only pick neighbours labelled 0, whatever its own label. A point with no valid neighbour is left where it is. |
 | `stability_fn` | Optional callable that updates the stability scores (`(n,)`, in `[0, 1]`, higher = more stable) after every iteration. It receives the new and previous positions. Without one, every point stays at 1.0. See [Stability](#stability). |
 | `metric_fn` | Optional callable evaluated after every iteration. Its per-iteration values are summed and returned in place of the default `(n,)` summed movement. |
 | `score_fn` | Replacement for the selection score. Called whenever neighbours are selected, including the initial selection, so with `recompute_neighbors=0` it defines the single neighbour graph the run uses. |
