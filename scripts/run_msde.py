@@ -33,7 +33,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from datasets.embeds import SingleEmbedsDataset  # noqa: E402
 
-COMPONENTS = ("density", "score", "weight", "stability")
+COMPONENTS = ("density", "score", "weight", "stability", "metric", "bias", "step")
+SUPPORT_COMPONENTS = ("bias", "step")  # used only with support > 0
 
 
 def precision_at_n(y_true: np.ndarray, score: np.ndarray, n: int) -> float:
@@ -74,8 +75,20 @@ def run_dataset(cfg: DictConfig, name: str) -> None:
     data = SingleEmbedsDataset(
         root / cfg.modality / name, encoder=cfg.encoder, cap=cfg.cap, seed=cfg.seed, as_tensor=False
     )
-    X = torch.from_numpy(np.asarray(data.embeddings, dtype=np.float32))
-    labels = np.asarray(data.labels)
+    embeddings, labels, indices = data.embeddings, np.asarray(data.labels), data.indices
+    support = None
+    if cfg.support > 0:
+        normal = np.flatnonzero(labels == 0)
+        if cfg.support >= len(normal):
+            print(f"[skip] {name}: support={cfg.support} needs more normal samples (has {len(normal)})")
+            return
+        # Normal samples drawn as support are removed from the evaluated points.
+        chosen = np.sort(np.random.RandomState(cfg.seed).choice(normal, cfg.support, replace=False))
+        support_index = indices[chosen]
+        support = torch.from_numpy(np.asarray(embeddings[chosen], dtype=np.float32))
+        rest = np.setdiff1d(np.arange(len(labels)), chosen)
+        embeddings, labels, indices = embeddings[rest], labels[rest], indices[rest]
+    X = torch.from_numpy(np.asarray(embeddings, dtype=np.float32))
     y = (labels != 0).astype(int)
     n, n_anomalies = len(y), int(y.sum())
     if n_anomalies == 0 or n_anomalies == n:
@@ -90,10 +103,11 @@ def run_dataset(cfg: DictConfig, name: str) -> None:
     if overrides:
         print(f"[warn] {name}: n={n} too small, overriding {overrides}")
 
-    fns = {
-        comp: hydra.utils.instantiate(cfg[comp].fn) if cfg[comp].fn is not None else None
-        for comp in COMPONENTS
-    }
+    # A component set to null in the defaults list (e.g. step) is absent from cfg.
+    components = [comp for comp in COMPONENTS
+                  if cfg.get(comp) is not None and (comp not in SUPPORT_COMPONENTS or support is not None)]
+    fns = {comp: None for comp in COMPONENTS}
+    fns.update({comp: hydra.utils.instantiate(cfg[comp].fn) for comp in components if cfg[comp].fn is not None})
     subtypes = [int(c) for c in np.unique(labels) if c != 0]
     subtype_counts = {c: int((labels == c).sum()) for c in subtypes} if len(subtypes) > 1 else {}
 
@@ -103,8 +117,9 @@ def run_dataset(cfg: DictConfig, name: str) -> None:
     for r in range(cfg.pseudo_labels.rounds):
         model = hydra.utils.instantiate(cfg.model, **overrides)
         _, metric, _ = model(
-            X, labels=run_labels, dist=cfg.dist, density_fn=fns["density"], score_fn=fns["score"],
+            X, labels=run_labels, support=support, dist=cfg.dist, density_fn=fns["density"], score_fn=fns["score"],
             weight_fn=fns["weight"], stability_fn=fns["stability"],
+            metric_fn=fns["metric"], bias_fn=fns["bias"], step_fn=fns["step"],
         )
         score = metric.detach().cpu().numpy()
         scores.append(score)
@@ -126,25 +141,27 @@ def run_dataset(cfg: DictConfig, name: str) -> None:
             "encoder": cfg.encoder,
             "seed": cfg.seed,
             "dist": cfg.dist,
+            "support": cfg.support,
             "n_samples": n,
             "n_anomalies": n_anomalies,
             "pseudo_label_rounds": cfg.pseudo_labels.rounds,
             "pseudo_label_anomaly_fraction": cfg.pseudo_labels.anomaly_fraction,
             **{f"n_subtype_{c}": count for c, count in subtype_counts.items()},
-            **{comp: cfg[comp].name for comp in COMPONENTS},
+            **{comp: cfg[comp].name for comp in components},
             **{f"model.{key}": value for key, value in OmegaConf.to_container(cfg.model).items() if key != "_target_"},
             **{f"model.{key}": value for key, value in overrides.items()},
         })
         for r, metrics in enumerate(rounds):  # the latest value of each metric is the last round's
             mlflow.log_metrics(metrics, step=r)
         mlflow.log_dict(OmegaConf.to_container(cfg, resolve=True), "configs/config.yaml")
-        for comp in COMPONENTS:
+        for comp in components:
             mlflow.log_dict(OmegaConf.to_container(cfg[comp], resolve=True), f"configs/{comp}.yaml")
         # Per-sample scores of the last round (and of every round), with each sample's label and its index into
-        # the dataset's labels.npy.
+        # the dataset's labels.npy (and, with support, the support samples' indices).
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "scores.npz"
-            np.savez(path, score=scores[-1], score_rounds=np.stack(scores), label=labels, index=data.indices)
+            extra = {"support_index": support_index} if support is not None else {}
+            np.savez(path, score=scores[-1], score_rounds=np.stack(scores), label=labels, index=indices, **extra)
             mlflow.log_artifact(str(path), "scores")
     for r, metrics in enumerate(rounds):
         print(f"{cfg.modality}/{name}/{cfg.encoder} round {r}: "

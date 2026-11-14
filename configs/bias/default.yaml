@@ -1,0 +1,5 @@
+# A step of learning_rate towards the mean of the support points (used only with support > 0).
+name: default
+fn:
+  _target_: src.bias.default
+  _partial_: true
