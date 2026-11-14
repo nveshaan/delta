@@ -198,19 +198,23 @@ class SingleEmbedsDataset(Dataset):
                 f"{len(embeds)} embeds vs {len(labels)} labels"
             )
 
+        source = np.arange(len(labels))                                      # positions in labels.npy
         if include_labels is not None:
             include_labels_array = np.asarray(list(include_labels))
             keep = np.isin(labels, include_labels_array)
             embeds = embeds[keep]
             labels = labels[keep]
+            source = source[keep]
 
         if self.cap is not None and len(embeds) > self.cap:
             indices = _balanced_cap_indices(labels, self.cap, self.seed)
             embeds = embeds[indices]
             labels = labels[indices]
+            source = source[indices]
 
         self.embeddings = embeds
         self.labels = labels
+        self.indices = source
 
     def __len__(self) -> int:
         return len(self.embeddings)

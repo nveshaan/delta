@@ -4,6 +4,7 @@ Example: python scripts/run_baseline.py baselines=adaclip modality=chest dataset
 """
 import argparse
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -97,6 +98,11 @@ def run_dataset(cfg: DictConfig, name: str) -> None:
         mlflow.log_metrics(metrics, step=0)
         mlflow.log_dict(OmegaConf.to_container(cfg, resolve=True), "configs/config.yaml")
         mlflow.log_dict(OmegaConf.to_container(cfg.baselines, resolve=True), "configs/baseline.yaml")
+        # Per-sample scores, with each sample's label and its index into the dataset's labels.npy.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "scores.npz"
+            np.savez(path, score=score, label=labels, index=keep)
+            mlflow.log_artifact(str(path), "scores")
     print(f"{cfg.modality}/{name}/{label}: " + " ".join(f"{k}={v:.4f}" for k, v in metrics.items() if "/" not in k))
     for c, count in subtype_counts.items():
         print(f"  subtype {c} (n={count}): auroc={metrics[f'subtype_{c}/auroc']:.4f} "

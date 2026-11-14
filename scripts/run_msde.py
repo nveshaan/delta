@@ -4,6 +4,7 @@ Example: python scripts/run_msde.py modality=chest encoder=CLIP dataset=VinCXR
 """
 import argparse
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -97,6 +98,7 @@ def run_dataset(cfg: DictConfig, name: str) -> None:
     subtype_counts = {c: int((labels == c).sum()) for c in subtypes} if len(subtypes) > 1 else {}
 
     rounds = []  # metrics of every MSDE run
+    scores = []  # per-sample scores of every MSDE run
     run_labels = None
     for r in range(cfg.pseudo_labels.rounds):
         model = hydra.utils.instantiate(
@@ -107,6 +109,7 @@ def run_dataset(cfg: DictConfig, name: str) -> None:
             stability_fn=fns["stability"], weight_fn=fns["weight"],
         )
         score = metric.detach().cpu().numpy()
+        scores.append(score)
 
         metrics = detection_metrics(y, score)
         # Subtypes (datasets with several non-zero labels): each one against the normal samples (label 0) only.
@@ -139,6 +142,12 @@ def run_dataset(cfg: DictConfig, name: str) -> None:
         mlflow.log_dict(OmegaConf.to_container(cfg, resolve=True), "configs/config.yaml")
         for comp in COMPONENTS:
             mlflow.log_dict(OmegaConf.to_container(cfg[comp], resolve=True), f"configs/{comp}.yaml")
+        # Per-sample scores of the last round (and of every round), with each sample's label and its index into
+        # the dataset's labels.npy.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "scores.npz"
+            np.savez(path, score=scores[-1], score_rounds=np.stack(scores), label=labels, index=data.indices)
+            mlflow.log_artifact(str(path), "scores")
     for r, metrics in enumerate(rounds):
         print(f"{cfg.modality}/{name}/{cfg.encoder} round {r}: "
               + " ".join(f"{k}={v:.4f}" for k, v in metrics.items() if "/" not in k))
